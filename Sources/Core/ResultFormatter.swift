@@ -419,6 +419,232 @@ public enum ResultFormatter {
         return sections.joined(separator: "\n\n")
     }
 
+    // MARK: Subject (foreground instances)
+
+    public static func formatSubject(_ r: SubjectResult) -> String {
+        if r.instances.isEmpty { return "0 subjects detected" }
+        let pct = Int((r.coverage * 100).rounded())
+        let noun = r.count == 1 ? "subject" : "subjects"
+        var lines: [String] = ["\(r.count) \(noun) lifted · \(pct)% of image"]
+        for s in r.instances {
+            let aPct = Int((s.area * 100).rounded())
+            lines.append(String(format: "subject %d: area=%d%% bbox=(%.3f,%.3f,%.3f,%.3f)",
+                                s.index, aPct, s.x, s.y, s.width, s.height))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    public static func markdownSubject(_ r: SubjectResult) -> String {
+        if r.instances.isEmpty { return "**0 subjects detected**" }
+        let pct = Int((r.coverage * 100).rounded())
+        let noun = r.count == 1 ? "subject" : "subjects"
+        var lines: [String] = ["**\(r.count) \(noun) lifted · \(pct)% of image**"]
+        for s in r.instances {
+            let aPct = Int((s.area * 100).rounded())
+            lines.append(String(format: "- subject %d — area `%d%%` — bbox=(%.3f,%.3f,%.3f,%.3f)",
+                                s.index, aPct, s.x, s.y, s.width, s.height))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: Persons mask
+
+    public static func formatPersonsMask(_ r: PersonsMaskResult) -> String {
+        if r.coverage <= 0 && r.instances.isEmpty { return "no person pixels detected" }
+        let pct = Int((r.coverage * 100).rounded())
+        let regionNoun = r.count == 1 ? "region" : "regions"
+        var lines: [String] = ["persons mask · \(pct)% of image · \(r.count) \(regionNoun)"]
+        for s in r.instances {
+            let aPct = Int((s.area * 100).rounded())
+            lines.append(String(format: "region %d: area=%d%% bbox=(%.3f,%.3f,%.3f,%.3f)",
+                                s.index, aPct, s.x, s.y, s.width, s.height))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    public static func markdownPersonsMask(_ r: PersonsMaskResult) -> String {
+        if r.coverage <= 0 && r.instances.isEmpty { return "**no person pixels detected**" }
+        let pct = Int((r.coverage * 100).rounded())
+        let regionNoun = r.count == 1 ? "region" : "regions"
+        var lines: [String] = ["**persons mask · \(pct)% of image · \(r.count) \(regionNoun)**"]
+        for s in r.instances {
+            let aPct = Int((s.area * 100).rounded())
+            lines.append(String(format: "- region %d — area `%d%%` — bbox=(%.3f,%.3f,%.3f,%.3f)",
+                                s.index, aPct, s.x, s.y, s.width, s.height))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: --model (Core ML uniform envelope)
+
+    public static func formatCoreML(_ r: CoreMLResult) -> String {
+        let header = "model: \(r.modelName) · type: \(r.observationType.rawValue)"
+        switch r.observationType {
+        case .classification:
+            if r.classifications.isEmpty { return header + "\nno observations" }
+            let sorted = r.classifications.sorted { $0.confidence > $1.confidence }
+            let bullets = sorted.map { c in
+                let pct = Int((c.confidence * 100).rounded())
+                return "  \(c.label): \(pct)%"
+            }
+            return ([header] + bullets).joined(separator: "\n")
+        case .detection:
+            if r.detections.isEmpty { return header + "\nno observations" }
+            let bullets = r.detections.enumerated().map { (i, d) in
+                let pct = Int((d.confidence * 100).rounded())
+                return String(format: "  %d. %@ — %d%% — bbox=(%.3f,%.3f,%.3f,%.3f)",
+                              i + 1, d.label as NSString, pct, d.x, d.y, d.width, d.height)
+            }
+            return ([header] + bullets).joined(separator: "\n")
+        case .feature:
+            if r.features.isEmpty { return header + "\nno observations" }
+            let bullets = r.features.map { f -> String in
+                let head = "  \(f.name): shape=\(f.shape) elements=\(f.elementCount) elementType=\(f.elementType)"
+                let preview = f.sample.prefix(8).map { String(format: "%.3f", $0) }.joined(separator: ", ")
+                return head + "\n    first \(min(f.sample.count, 8)): [\(preview)]"
+            }
+            return ([header] + bullets).joined(separator: "\n")
+        }
+    }
+
+    public static func markdownCoreML(_ r: CoreMLResult) -> String {
+        let header = "**model:** `\(r.modelName)` · **type:** `\(r.observationType.rawValue)`"
+        switch r.observationType {
+        case .classification:
+            if r.classifications.isEmpty { return header + "\n\n_no observations_" }
+            let sorted = r.classifications.sorted { $0.confidence > $1.confidence }
+            let bullets = sorted.map { c -> String in
+                let pct = Int((c.confidence * 100).rounded())
+                return "- **\(c.label)** — \(pct)%"
+            }
+            return ([header] + bullets).joined(separator: "\n")
+        case .detection:
+            if r.detections.isEmpty { return header + "\n\n_no observations_" }
+            let bullets = r.detections.enumerated().map { (i, d) -> String in
+                let pct = Int((d.confidence * 100).rounded())
+                return String(format: "- %d. **%@** — `%d%%` — bbox=(%.3f, %.3f, %.3f, %.3f)",
+                              i + 1, d.label as NSString, pct, d.x, d.y, d.width, d.height)
+            }
+            return ([header] + bullets).joined(separator: "\n")
+        case .feature:
+            if r.features.isEmpty { return header + "\n\n_no observations_" }
+            let bullets = r.features.map { f -> String in
+                let preview = f.sample.prefix(8).map { String(format: "%.3f", $0) }.joined(separator: ", ")
+                return "- `\(f.name)` — shape=\(f.shape) · elements=\(f.elementCount) · type=\(f.elementType)\n  - first values: `[\(preview)]`"
+            }
+            return ([header] + bullets).joined(separator: "\n")
+        }
+    }
+
+    // MARK: --motion (optical-flow summary)
+
+    public static func formatMotion(_ r: MotionResult) -> String {
+        let s = r.summary
+        if s.sampleCount == 0 { return "no motion sampled" }
+        return String(format: "motion: avg |v|=%.3f · peak |v|=%.3f · direction %.1f° (%d samples)",
+                      s.averageMagnitude, s.maxMagnitude, s.dominantAngleDegrees, s.sampleCount)
+    }
+
+    public static func markdownMotion(_ r: MotionResult) -> String {
+        let s = r.summary
+        if s.sampleCount == 0 { return "_no motion sampled_" }
+        return String(format: "- avg magnitude: **%.3f**\n- peak magnitude: **%.3f**\n- direction: **%.1f°** (%d samples)",
+                      s.averageMagnitude, s.maxMagnitude, s.dominantAngleDegrees, s.sampleCount)
+    }
+
+    // MARK: --align (registration transform)
+
+    public static func formatAlign(_ r: AlignResult) -> String {
+        if r.isIdentity { return "alignment: identity (no shift detected)" }
+        return "alignment kind: \(r.transform.kind.rawValue) · matrix=\(r.transform.matrix)"
+    }
+
+    public static func markdownAlign(_ r: AlignResult) -> String {
+        if r.isIdentity { return "_identity transform — frames already aligned_" }
+        let m = r.transform.matrix.map { String(format: "%.4f", $0) }.joined(separator: ", ")
+        return "**kind:** `\(r.transform.kind.rawValue)`\n\n**matrix (row-major 3×3):** `[\(m)]`"
+    }
+
+    // MARK: --track (sequence handler tracking)
+
+    public static func formatTrack(_ r: TrackResult) -> String {
+        if r.frames.isEmpty { return "tracking yielded no frames" }
+        var lines = [String]()
+        lines.append("tracked \(r.frames.count) frames")
+        for f in r.frames {
+            lines.append(String(format: "  %@: bbox=(%.3f,%.3f,%.3f,%.3f) confidence=%.3f",
+                                f.file as NSString, f.x, f.y, f.width, f.height, f.confidence))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    public static func markdownTrack(_ r: TrackResult) -> String {
+        if r.frames.isEmpty { return "**tracking yielded no frames**" }
+        var lines = ["**tracked \(r.frames.count) frames**"]
+        for f in r.frames {
+            lines.append(String(format: "- `%@` — bbox=(%.3f,%.3f,%.3f,%.3f) — confidence `%.3f`",
+                                f.file as NSString, f.x, f.y, f.width, f.height, f.confidence))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: --trajectories
+
+    public static func formatTrajectories(_ r: TrajectoryResult) -> String {
+        if r.count == 0 { return "0 trajectories detected" }
+        var lines = ["\(r.count) trajector\(r.count == 1 ? "y" : "ies") detected"]
+        for (i, t) in r.trajectories.enumerated() {
+            lines.append("  trajectory \(i + 1): \(t.detected.count) detected, \(t.projected.count) projected, coeffs=\(t.equationCoefficients)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    public static func markdownTrajectories(_ r: TrajectoryResult) -> String {
+        if r.count == 0 { return "**0 trajectories detected**" }
+        var lines = ["**\(r.count) trajector\(r.count == 1 ? "y" : "ies") detected**"]
+        for (i, t) in r.trajectories.enumerated() {
+            lines.append("- trajectory \(i + 1) — `\(t.detected.count)` detected pts, `\(t.projected.count)` projected pts")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: video bundle
+
+    public static func formatVideo(_ r: VideoResult) -> String {
+        var lines = [String]()
+        lines.append("video: \(String(format: "%.2f", r.durationSeconds))s · \(r.frameCount) sampled frames")
+        for f in r.frames {
+            let t = String(format: "[t=%.2fs]", f.time)
+            if !f.ocr.isEmpty {
+                lines.append("\(t) ocr: \(f.ocr.joined(separator: " | "))")
+            }
+            if !f.classifications.isEmpty {
+                let top = f.classifications.prefix(1).map { c in
+                    "\(c.label) (\(Int((c.confidence*100).rounded()))%)"
+                }.joined()
+                lines.append("\(t) classify: \(top)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    public static func markdownVideo(_ r: VideoResult) -> String {
+        var lines = ["**video** — \(String(format: "%.2f", r.durationSeconds))s · \(r.frameCount) sampled frames"]
+        for f in r.frames {
+            let t = String(format: "**t=%.2fs**", f.time)
+            if !f.ocr.isEmpty {
+                lines.append("- \(t): ocr — \(f.ocr.joined(separator: " | "))")
+            }
+            if !f.classifications.isEmpty {
+                let top = f.classifications.prefix(1).map { c in
+                    "**\(c.label)** (\(Int((c.confidence*100).rounded()))%)"
+                }.joined()
+                lines.append("- \(t): classify — \(top)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
     public static func markdownAll(
         ocrLines: [String]?,
         classifications: [ClassificationResult]?,

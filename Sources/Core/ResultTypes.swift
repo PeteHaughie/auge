@@ -283,6 +283,44 @@ public struct DocumentTable: Codable, Sendable {
     }
 }
 
+// MARK: - v1.5 mask-based results (subject + persons-mask)
+
+public struct SubjectInstance: Codable, Sendable {
+    public let index: Int
+    public let area: Double
+    public let x: Double
+    public let y: Double
+    public let width: Double
+    public let height: Double
+    public init(index: Int, area: Double, x: Double, y: Double, width: Double, height: Double) {
+        self.index = index
+        self.area = area
+        self.x = x; self.y = y; self.width = width; self.height = height
+    }
+}
+
+public struct SubjectResult: Codable, Sendable {
+    public let count: Int
+    public let coverage: Double
+    public let instances: [SubjectInstance]
+    public init(coverage: Double, instances: [SubjectInstance]) {
+        self.count = instances.count
+        self.coverage = coverage
+        self.instances = instances
+    }
+}
+
+public struct PersonsMaskResult: Codable, Sendable {
+    public let count: Int
+    public let coverage: Double
+    public let instances: [SubjectInstance]
+    public init(coverage: Double, instances: [SubjectInstance]) {
+        self.count = instances.count
+        self.coverage = coverage
+        self.instances = instances
+    }
+}
+
 public struct DocumentResult: Codable, Sendable {
     public let text: String
     public let paragraphs: [DocumentParagraph]

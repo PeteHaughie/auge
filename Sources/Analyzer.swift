@@ -5,6 +5,10 @@
 
 import Foundation
 import Vision
+import CoreVideo
+import CoreML
+import CoreImage
+import AVFoundation
 import AugeCore
 
 // MARK: - Analysis Mode
@@ -32,6 +36,14 @@ enum AnalysisMode: String, Sendable {
     case aesthetics
     case smudge
     case document
+    case subject
+    case personsMask
+    case model
+    case motion
+    case align
+    case track
+    case trajectories
+    case video
     case all
 }
 
@@ -580,6 +592,549 @@ enum Analyzer {
         }
 
         return (FeaturePrintResult(dimension: count, elementType: elementType, vector: vector), obs)
+    }
+
+    // MARK: Subject lifting (foreground instance mask)
+
+    /// Each Vision observation gives one foreground instance plus its bbox in
+    /// image-pixel coordinates. We map to normalized Vision coords (bottom-left
+    /// origin), and compute coverage by rendering the per-instance mask to a
+    /// byte buffer and summing.
+    static func detectSubjectInstances(at url: URL) throws -> SubjectResult {
+        let handler = VNImageRequestHandler(url: url, options: [:])
+        let request = VNGenerateForegroundInstanceMaskRequest()
+        try handler.perform([request])
+
+        guard let observation = request.results?.first else {
+            return SubjectResult(coverage: 0, instances: [])
+        }
+
+        var instances: [SubjectInstance] = []
+        var totalCoverage = 0.0
+        let allInstances = observation.allInstances
+        for (i, instance) in allInstances.enumerated() {
+            do {
+                let buffer = try observation.generateMask(forInstances: [instance])
+                let (w, h, pixels) = pixelBufferToBytes(buffer)
+                guard w > 0, h > 0, !pixels.isEmpty else { continue }
+                let cov = MaskAnalysis.coverage(width: w, height: h, pixels: pixels)
+                totalCoverage += cov
+                guard let bb = MaskAnalysis.boundingBox(width: w, height: h, pixels: pixels) else {
+                    continue
+                }
+                instances.append(SubjectInstance(
+                    index: i + 1,
+                    area: cov,
+                    x: bb.x, y: bb.y, width: bb.width, height: bb.height
+                ))
+            } catch {
+                continue
+            }
+        }
+        return SubjectResult(coverage: min(totalCoverage, 1.0), instances: instances)
+    }
+
+    // MARK: Persons mask (semantic segmentation of all people)
+
+    /// `VNGeneratePersonSegmentationRequest` returns a single mask spanning every
+    /// person in the frame. We compute coverage, then split that mask into
+    /// connected components so multiple separated people appear as separate
+    /// regions in the JSON.
+    static func detectPersonsMask(at url: URL) throws -> PersonsMaskResult {
+        let handler = VNImageRequestHandler(url: url, options: [:])
+        let request = VNGeneratePersonSegmentationRequest()
+        request.qualityLevel = .balanced
+        request.outputPixelFormat = kCVPixelFormatType_OneComponent8
+        try handler.perform([request])
+
+        guard let observation = request.results?.first else {
+            return PersonsMaskResult(coverage: 0, instances: [])
+        }
+
+        let buffer = observation.pixelBuffer
+        let (w, h, pixels) = pixelBufferToBytes(buffer)
+        guard w > 0, h > 0, !pixels.isEmpty else {
+            return PersonsMaskResult(coverage: 0, instances: [])
+        }
+
+        let coverage = MaskAnalysis.coverage(width: w, height: h, pixels: pixels)
+        // 0.4% of the image minimum keeps stray pixels from showing up as people.
+        let minPixels = max(1, (w * h) / 250)
+        let components = MaskAnalysis.connectedComponents(
+            width: w, height: h, pixels: pixels, minPixels: minPixels
+        )
+        let instances = components.enumerated().map { (i, c) in
+            SubjectInstance(
+                index: i + 1,
+                area: c.area,
+                x: c.x, y: c.y, width: c.width, height: c.height
+            )
+        }
+        return PersonsMaskResult(coverage: coverage, instances: instances)
+    }
+
+    /// Pull a `CVPixelBuffer` (`kCVPixelFormatType_OneComponent8` after the request
+    /// runs) into a flat `[UInt8]` byte buffer for the mask post-processor.
+    /// Returns `(width, height, bytes)`. Bytes are stored row-major, top-origin —
+    /// exactly what `MaskAnalysis` expects.
+    private static func pixelBufferToBytes(_ buffer: CVPixelBuffer) -> (Int, Int, [UInt8]) {
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        let w = CVPixelBufferGetWidth(buffer)
+        let h = CVPixelBufferGetHeight(buffer)
+        let stride = CVPixelBufferGetBytesPerRow(buffer)
+        guard w > 0, h > 0, stride >= w,
+              let base = CVPixelBufferGetBaseAddress(buffer) else {
+            return (0, 0, [])
+        }
+        var pixels = [UInt8](repeating: 0, count: w * h)
+        let src = base.assumingMemoryBound(to: UInt8.self)
+        for row in 0..<h {
+            let srcRow = src.advanced(by: row * stride)
+            let dstStart = row * w
+            for col in 0..<w {
+                pixels[dstStart + col] = srcRow[col]
+            }
+        }
+        return (w, h, pixels)
+    }
+
+    // MARK: Custom Core ML model passthrough (v1.6)
+
+    /// Load + run an arbitrary `.mlmodel` or `.mlmodelc` against an image, returning
+    /// the observations normalized into `CoreMLResult`. `.mlmodel` source files are
+    /// compiled to a tmp `.mlmodelc` on the fly.
+    static func runCoreMLModel(modelPath: String, imageURL: URL) throws -> CoreMLResult {
+        let modelKind = ModelPath.classify(modelPath)
+        guard modelKind != .invalid else {
+            throw AugeError.unsupportedFormat("--model: \(modelPath) must end with .mlmodel or .mlmodelc")
+        }
+
+        let modelURL = URL(fileURLWithPath: modelPath)
+        guard FileManager.default.fileExists(atPath: modelURL.path) else {
+            throw AugeError.fileNotFound(modelPath)
+        }
+
+        let compiledURL: URL
+        if modelKind == .source {
+            do {
+                compiledURL = try MLModel.compileModel(at: modelURL)
+            } catch {
+                throw AugeError.unknown("--model: failed to compile \(modelPath): \(error.localizedDescription)")
+            }
+        } else {
+            compiledURL = modelURL
+        }
+
+        let mlModel: MLModel
+        do {
+            mlModel = try MLModel(contentsOf: compiledURL)
+        } catch {
+            throw AugeError.unknown("--model: failed to load compiled model: \(error.localizedDescription)")
+        }
+
+        let visionModel: VNCoreMLModel
+        do {
+            visionModel = try VNCoreMLModel(for: mlModel)
+        } catch {
+            throw AugeError.unknown("--model: VNCoreMLModel rejected this model: \(error.localizedDescription)")
+        }
+
+        let request = VNCoreMLRequest(model: visionModel)
+        request.imageCropAndScaleOption = .scaleFit
+        let handler = VNImageRequestHandler(url: imageURL, options: [:])
+        try handler.perform([request])
+
+        let observations = request.results ?? []
+        let modelName = modelURL.lastPathComponent
+
+        // Classification first — these are scalar predictions, so we treat any
+        // non-empty stream of classification observations as a classification
+        // result and bail out before checking the other branches.
+        let classifications = observations.compactMap { obs -> CoreMLClassification? in
+            guard let c = obs as? VNClassificationObservation else { return nil }
+            return CoreMLClassification(label: c.identifier, confidence: Double(c.confidence))
+        }
+        if !classifications.isEmpty {
+            let sorted = classifications.sorted { $0.confidence > $1.confidence }
+            return CoreMLResult(
+                modelName: modelName,
+                observationType: .classification,
+                classifications: Array(sorted.prefix(20)),
+                detections: [], features: []
+            )
+        }
+
+        // Detection: VNRecognizedObjectObservation has a bbox + labels[].
+        let detections = observations.flatMap { obs -> [CoreMLDetection] in
+            guard let d = obs as? VNRecognizedObjectObservation else { return [] }
+            let bb = d.boundingBox
+            let topLabel = d.labels.first
+            return [CoreMLDetection(
+                label: topLabel?.identifier ?? "object",
+                confidence: Double(topLabel?.confidence ?? d.confidence),
+                x: Double(bb.origin.x),
+                y: Double(bb.origin.y),
+                width: Double(bb.size.width),
+                height: Double(bb.size.height)
+            )]
+        }
+        if !detections.isEmpty {
+            return CoreMLResult(
+                modelName: modelName,
+                observationType: .detection,
+                classifications: [],
+                detections: detections,
+                features: []
+            )
+        }
+
+        // Feature value: arbitrary multi-array / image / dictionary output.
+        var features: [CoreMLFeature] = []
+        for obs in observations {
+            guard let f = obs as? VNCoreMLFeatureValueObservation else { continue }
+            features.append(coreMLFeatureFrom(featureName: f.featureName, value: f.featureValue))
+        }
+        return CoreMLResult(
+            modelName: modelName,
+            observationType: .feature,
+            classifications: [],
+            detections: [],
+            features: features
+        )
+    }
+
+    private static func coreMLFeatureFrom(featureName: String, value: MLFeatureValue) -> CoreMLFeature {
+        switch value.type {
+        case .multiArray:
+            if let array = value.multiArrayValue {
+                let shape = array.shape.map { $0.intValue }
+                let count = array.count
+                let limit = min(count, CoreMLFeature.sampleLimit)
+                var sample = [Double](repeating: 0, count: limit)
+                let elementType: String
+                switch array.dataType {
+                case .double:
+                    let ptr = array.dataPointer.bindMemory(to: Double.self, capacity: count)
+                    for i in 0..<limit { sample[i] = ptr[i] }
+                    elementType = "double"
+                case .float32:
+                    let ptr = array.dataPointer.bindMemory(to: Float.self, capacity: count)
+                    for i in 0..<limit { sample[i] = Double(ptr[i]) }
+                    elementType = "float32"
+                case .float16:
+                    elementType = "float16"
+                case .int32:
+                    let ptr = array.dataPointer.bindMemory(to: Int32.self, capacity: count)
+                    for i in 0..<limit { sample[i] = Double(ptr[i]) }
+                    elementType = "int32"
+                @unknown default:
+                    elementType = "unknown"
+                }
+                return CoreMLFeature(
+                    name: featureName, shape: shape, elementType: elementType,
+                    sample: sample, elementCount: count
+                )
+            }
+        case .dictionary:
+            if let dict = value.dictionaryValue as? [String: Double] {
+                let keys = dict.keys.sorted().prefix(CoreMLFeature.sampleLimit)
+                let sample = keys.map { dict[$0] ?? 0 }
+                return CoreMLFeature(
+                    name: featureName,
+                    shape: [dict.count],
+                    elementType: "dictionary<string,double>",
+                    sample: Array(sample),
+                    elementCount: dict.count
+                )
+            }
+        case .double:
+            return CoreMLFeature(name: featureName, shape: [1], elementType: "double",
+                                 sample: [value.doubleValue], elementCount: 1)
+        case .int64:
+            return CoreMLFeature(name: featureName, shape: [1], elementType: "int64",
+                                 sample: [Double(value.int64Value)], elementCount: 1)
+        case .string:
+            return CoreMLFeature(name: featureName, shape: [1], elementType: "string",
+                                 sample: [], elementCount: 1)
+        case .image:
+            return CoreMLFeature(name: featureName, shape: [], elementType: "image",
+                                 sample: [], elementCount: 0)
+        case .sequence:
+            return CoreMLFeature(name: featureName, shape: [], elementType: "sequence",
+                                 sample: [], elementCount: 0)
+        case .invalid:
+            return CoreMLFeature(name: featureName, shape: [], elementType: "invalid",
+                                 sample: [], elementCount: 0)
+        case .state:
+            return CoreMLFeature(name: featureName, shape: [], elementType: "state",
+                                 sample: [], elementCount: 0)
+        @unknown default:
+            break
+        }
+        return CoreMLFeature(name: featureName, shape: [], elementType: "unknown",
+                             sample: [], elementCount: 0)
+    }
+
+    // MARK: --motion (optical flow summary)
+
+    /// Run `VNGenerateOpticalFlowRequest` against two frames and reduce the
+    /// vector field down to a single magnitude + direction summary. We do not
+    /// emit the full vector field — that would be raster output, and auge sees,
+    /// it does not paint.
+    static func motion(from a: URL, to b: URL) throws -> MotionResult {
+        let imageA = try cgImage(from: a)
+        let imageB = try cgImage(from: b)
+
+        let request = VNGenerateOpticalFlowRequest(targetedCGImage: imageB, options: [:])
+        request.computationAccuracy = .medium
+        request.outputPixelFormat = kCVPixelFormatType_TwoComponent32Float
+
+        let handler = VNImageRequestHandler(cgImage: imageA, options: [:])
+        try handler.perform([request])
+
+        guard let observation = request.results?.first as? VNPixelBufferObservation else {
+            return MotionResult(summary: OpticalFlowSummary.summarize(vectors: []))
+        }
+
+        let vectors = sampleFlowVectors(observation.pixelBuffer)
+        let summary = OpticalFlowSummary.summarize(vectors: vectors)
+        return MotionResult(summary: summary)
+    }
+
+    /// Pull a sparse sample of (dx, dy) float-pairs out of an optical-flow
+    /// CVPixelBuffer (`kCVPixelFormatType_TwoComponent32Float`). We only
+    /// sample at most 4 096 points; the post-processor only needs the
+    /// aggregate, not the full field.
+    private static func sampleFlowVectors(_ buffer: CVPixelBuffer) -> [(Double, Double)] {
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        let w = CVPixelBufferGetWidth(buffer)
+        let h = CVPixelBufferGetHeight(buffer)
+        let rowBytes = CVPixelBufferGetBytesPerRow(buffer)
+        guard w > 0, h > 0, let base = CVPixelBufferGetBaseAddress(buffer) else { return [] }
+        let stride = max(1, (w * h) / 4096)
+        var out: [(Double, Double)] = []
+        out.reserveCapacity(4096)
+        var counter = 0
+        for row in 0..<h {
+            let ptr = base.advanced(by: row * rowBytes).assumingMemoryBound(to: Float.self)
+            for col in 0..<w {
+                if counter % stride == 0 {
+                    let dx = Double(ptr[col * 2])
+                    let dy = Double(ptr[col * 2 + 1])
+                    out.append((dx, dy))
+                }
+                counter += 1
+            }
+        }
+        return out
+    }
+
+    // MARK: --align (image registration)
+
+    /// Try translational alignment first (cheap, fits camera-shake / panning).
+    /// If translation reports no movement (identity), fall back to a homography.
+    static func align(from a: URL, to b: URL) throws -> AlignResult {
+        let imageA = try cgImage(from: a)
+        let imageB = try cgImage(from: b)
+
+        // Step 1 — translational.
+        let translation = VNTranslationalImageRegistrationRequest(targetedCGImage: imageB, options: [:])
+        let handlerT = VNImageRequestHandler(cgImage: imageA, options: [:])
+        try handlerT.perform([translation])
+
+        if let obs = translation.results?.first as? VNImageTranslationAlignmentObservation {
+            let tx = Double(obs.alignmentTransform.tx)
+            let ty = Double(obs.alignmentTransform.ty)
+            let matrix: [Double] = [
+                1, 0, tx,
+                0, 1, ty,
+                0, 0, 1
+            ]
+            let transform = RegistrationTransform(matrix: matrix, kind: .translation)
+            // The identity check uses 1e-9 tolerance; subpixel motion is real.
+            if !transform.isIdentity {
+                return AlignResult(transform: transform, isIdentity: false)
+            }
+        }
+
+        // Step 2 — homography fallback.
+        let homography = VNHomographicImageRegistrationRequest(targetedCGImage: imageB, options: [:])
+        let handlerH = VNImageRequestHandler(cgImage: imageA, options: [:])
+        try handlerH.perform([homography])
+
+        if let obs = homography.results?.first as? VNImageHomographicAlignmentObservation {
+            let m = obs.warpTransform
+            let matrix: [Double] = [
+                Double(m.columns.0.x), Double(m.columns.1.x), Double(m.columns.2.x),
+                Double(m.columns.0.y), Double(m.columns.1.y), Double(m.columns.2.y),
+                Double(m.columns.0.z), Double(m.columns.1.z), Double(m.columns.2.z)
+            ]
+            let transform = RegistrationTransform(matrix: matrix, kind: .homography)
+            return AlignResult(transform: transform, isIdentity: transform.isIdentity)
+        }
+
+        let identity = RegistrationTransform(matrix: [1,0,0,0,1,0,0,0,1], kind: .translation)
+        return AlignResult(transform: identity, isIdentity: true)
+    }
+
+    // MARK: --track (sequence handler)
+
+    /// Track a normalized bounding box across an ordered list of frame URLs
+    /// using `VNSequenceRequestHandler` + `VNTrackObjectRequest`. The first
+    /// frame establishes the box; subsequent frames are tracked from there.
+    static func track(initialBox: BoundingBox, frames: [URL]) throws -> TrackResult {
+        guard !frames.isEmpty else {
+            return TrackResult(initial: initialBox, frames: [])
+        }
+        let sequence = VNSequenceRequestHandler()
+        let visionBox = CGRect(x: initialBox.x, y: initialBox.y,
+                               width: initialBox.width, height: initialBox.height)
+        var detected = VNDetectedObjectObservation(boundingBox: visionBox)
+        var tracked: [TrackedFrame] = []
+
+        // First frame: emit the user-supplied box as the seed observation.
+        tracked.append(TrackedFrame(
+            file: frames[0].lastPathComponent,
+            x: initialBox.x, y: initialBox.y,
+            width: initialBox.width, height: initialBox.height,
+            confidence: 1.0
+        ))
+
+        for i in 1..<frames.count {
+            let request = VNTrackObjectRequest(detectedObjectObservation: detected)
+            request.trackingLevel = .accurate
+            request.isLastFrame = (i == frames.count - 1)
+            let image = try cgImage(from: frames[i])
+            try sequence.perform([request], on: image)
+
+            guard let next = request.results?.first as? VNDetectedObjectObservation else {
+                tracked.append(TrackedFrame(
+                    file: frames[i].lastPathComponent,
+                    x: detected.boundingBox.origin.x,
+                    y: detected.boundingBox.origin.y,
+                    width: detected.boundingBox.size.width,
+                    height: detected.boundingBox.size.height,
+                    confidence: 0.0
+                ))
+                continue
+            }
+            tracked.append(TrackedFrame(
+                file: frames[i].lastPathComponent,
+                x: Double(next.boundingBox.origin.x),
+                y: Double(next.boundingBox.origin.y),
+                width: Double(next.boundingBox.size.width),
+                height: Double(next.boundingBox.size.height),
+                confidence: Double(next.confidence)
+            ))
+            detected = next
+        }
+        return TrackResult(initial: initialBox, frames: tracked)
+    }
+
+    // MARK: --trajectories
+
+    static func detectTrajectories(at url: URL) throws -> TrajectoryResult {
+        // Trajectories are most useful over a video stream — but Vision also
+        // accepts single-image input which returns at most the projected
+        // trajectory of any in-flight object. Frame-by-frame video sampling is
+        // handled by the dispatcher.
+        let request = VNDetectTrajectoriesRequest(
+            frameAnalysisSpacing: .zero,
+            trajectoryLength: 5,
+            completionHandler: nil
+        )
+        let handler = VNImageRequestHandler(url: url, options: [:])
+        try handler.perform([request])
+
+        let observations = request.results ?? []
+        let trajectories: [Trajectory] = observations.map { obs in
+            Trajectory(
+                detected: obs.detectedPoints.map {
+                    PointResult(x: Double($0.location.x), y: Double($0.location.y))
+                },
+                projected: obs.projectedPoints.map {
+                    PointResult(x: Double($0.x), y: Double($0.y))
+                },
+                equationCoefficients: [
+                    Double(obs.equationCoefficients.x),
+                    Double(obs.equationCoefficients.y),
+                    Double(obs.equationCoefficients.z),
+                ]
+            )
+        }
+        return TrajectoryResult(trajectories: trajectories)
+    }
+
+    // MARK: Video sampling
+
+    static let videoExtensions: Set<String> = ["mp4", "mov", "m4v", "avi", "mkv"]
+
+    static func isVideo(at url: URL) -> Bool {
+        videoExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Sample frames from a video at fixed intervals and run lightweight
+    /// per-frame OCR + classification. Returns a `VideoResult` containing one
+    /// `VideoFrameResult` per sampled instant.
+    static func sampleVideo(
+        at url: URL,
+        everySeconds: Double,
+        runOCR: Bool,
+        runClassify: Bool,
+        languages: [String]
+    ) throws -> VideoResult {
+        let asset = AVURLAsset(url: url)
+        let duration = CMTimeGetSeconds(asset.duration)
+        guard duration.isFinite, duration > 0 else {
+            return VideoResult(durationSeconds: 0, frames: [])
+        }
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+
+        var frames: [VideoFrameResult] = []
+        var t: Double = 0
+        while t < duration {
+            let cmTime = CMTime(seconds: t, preferredTimescale: 600)
+            guard let cgImage = try? generator.copyCGImage(at: cmTime, actualTime: nil) else {
+                t += everySeconds
+                continue
+            }
+            var ocrLines: [String] = []
+            var classifications: [ClassificationResult] = []
+            if runOCR {
+                ocrLines = (try? recognizeText(in: cgImage, languages: languages)) ?? []
+            }
+            if runClassify {
+                let request = VNClassifyImageRequest()
+                let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+                try? handler.perform([request])
+                if let obs = request.results {
+                    classifications = obs
+                        .filter { $0.confidence > 0.05 }
+                        .sorted { $0.confidence > $1.confidence }
+                        .prefix(5)
+                        .map { ClassificationResult(label: $0.identifier, confidence: Double($0.confidence)) }
+                }
+            }
+            frames.append(VideoFrameResult(time: t, ocr: ocrLines, classifications: classifications))
+            t += everySeconds
+        }
+        return VideoResult(durationSeconds: duration, frames: frames)
+    }
+
+    // MARK: helpers
+
+    /// Load a CGImage from a file URL — straight CGImageSource pass-through.
+    private static func cgImage(from url: URL) throws -> CGImage {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            throw AugeError.invalidImage
+        }
+        return image
     }
 
     /// Compare two images via Vision's feature-print distance. Lower = more similar.

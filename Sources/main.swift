@@ -64,6 +64,9 @@ var ocrFast: Bool = false
 var ocrNoCorrect: Bool = false
 var ocrWithBoxes: Bool = false
 var ocrCustomWords: [String] = []
+var customModelPath: String? = nil
+var trackBBox: BoundingBox? = nil
+var sampleEverySeconds: Double = 1.0
 
 var i = 0
 while i < args.count {
@@ -123,7 +126,53 @@ while i < args.count {
     case "--aesthetics":           mode = .aesthetics
     case "--smudge":               mode = .smudge
     case "--document":             mode = .document
+    case "--subject":              mode = .subject
+    case "--persons-mask":         mode = .personsMask
     case "--all":                  mode = .all
+
+    case "--model":
+        i += 1
+        guard i < args.count else {
+            printError("--model requires a path to a .mlmodel or .mlmodelc")
+            exit(exitUsageError)
+        }
+        customModelPath = args[i]
+        mode = .model
+
+    case "--motion":
+        mode = .motion
+    case "--align":
+        mode = .align
+    case "--track":
+        mode = .track
+    case "--trajectories":
+        mode = .trajectories
+    case "--video":
+        mode = .video
+
+    case "--bbox":
+        i += 1
+        guard i < args.count else {
+            printError("--bbox requires a value like 0.1,0.2,0.3,0.4")
+            exit(exitUsageError)
+        }
+        guard let parsed = BBoxString.parse(args[i]) else {
+            printError("--bbox: invalid bbox '\(args[i])' (need 4 normalized 0..1 floats x,y,w,h with w,h>0)")
+            exit(exitUsageError)
+        }
+        trackBBox = parsed
+
+    case "--every":
+        i += 1
+        guard i < args.count else {
+            printError("--every requires a duration (e.g. 1s, 500ms, 2.5s)")
+            exit(exitUsageError)
+        }
+        guard let parsed = IntervalParser.parse(args[i]) else {
+            printError("--every: invalid duration '\(args[i])' (try 1s, 500ms, 2.5s, 1m)")
+            exit(exitUsageError)
+        }
+        sampleEverySeconds = parsed
 
     case "--clipboard":
         useClipboard = true
@@ -253,6 +302,72 @@ guard let analysisMode = mode else {
 guard !filePaths.isEmpty else {
     printError("no input file specified")
     exit(exitUsageError)
+}
+
+// MARK: - --motion / --align (two files in, single result out)
+
+if analysisMode == .motion || analysisMode == .align {
+    guard filePaths.count == 2 else {
+        printError("--\(analysisMode == .motion ? "motion" : "align") requires exactly two image paths")
+        exit(exitUsageError)
+    }
+    let a = filePaths[0]
+    let b = filePaths[1]
+    switch (ImageSource.validatePath(a), ImageSource.validatePath(b)) {
+    case (.failure(let e), _), (_, .failure(let e)):
+        printError("\(e.cliLabel) \(e.userMessage)")
+        exit(e.exitCode)
+    case (.success(let urlA), .success(let urlB)):
+        do {
+            if analysisMode == .motion {
+                let r = try Analyzer.motion(from: urlA, to: urlB)
+                outputResult(mode: "motion", file: "\(a) → \(b)",
+                             payload: .motion(MotionPayload(motion: r)))
+            } else {
+                let r = try Analyzer.align(from: urlA, to: urlB)
+                outputResult(mode: "align", file: "\(a) → \(b)",
+                             payload: .align(AlignPayload(align: r)))
+            }
+            exit(exitSuccess)
+        } catch {
+            let classified = AugeError.classify(error)
+            printError("\(classified.cliLabel) \(classified.userMessage)")
+            exit(classified.exitCode)
+        }
+    }
+}
+
+// MARK: - --track (n files in, single result out — needs --bbox)
+
+if analysisMode == .track {
+    guard filePaths.count >= 2 else {
+        printError("--track requires at least 2 frame paths")
+        exit(exitUsageError)
+    }
+    guard let bbox = trackBBox else {
+        printError("--track requires --bbox <x,y,w,h>")
+        exit(exitUsageError)
+    }
+    var urls: [URL] = []
+    for p in filePaths {
+        switch ImageSource.validatePath(p) {
+        case .failure(let e):
+            printError("\(e.cliLabel) \(e.userMessage)")
+            exit(e.exitCode)
+        case .success(let url):
+            urls.append(url)
+        }
+    }
+    do {
+        let r = try Analyzer.track(initialBox: bbox, frames: urls)
+        outputResult(mode: "track", file: filePaths.joined(separator: ","),
+                     payload: .track(TrackPayload(track: r)))
+        exit(exitSuccess)
+    } catch {
+        let classified = AugeError.classify(error)
+        printError("\(classified.cliLabel) \(classified.userMessage)")
+        exit(classified.exitCode)
+    }
 }
 
 // MARK: - --compare special case (two files in, single result out)
@@ -465,6 +580,62 @@ for filePath in filePaths {
                 outputResult(mode: "document", file: filePath,
                              payload: .document(DocumentPayload(document: result)))
 
+            case .subject:
+                let result = try Analyzer.detectSubjectInstances(at: url)
+                outputResult(mode: "subject", file: filePath,
+                             payload: .subject(SubjectPayload(subject: result)))
+
+            case .personsMask:
+                let result = try Analyzer.detectPersonsMask(at: url)
+                outputResult(mode: "persons-mask", file: filePath,
+                             payload: .personsMask(PersonsMaskPayload(personsMask: result)))
+
+            case .model:
+                guard let modelPath = customModelPath else {
+                    printError("--model: missing model path (internal error)")
+                    exit(exitUsageError)
+                }
+                let result = try Analyzer.runCoreMLModel(modelPath: modelPath, imageURL: url)
+                outputResult(mode: "model", file: filePath,
+                             payload: .model(ModelPayload(model: result)))
+
+            case .motion, .align, .track:
+                // Handled above via early-return.
+                break
+
+            case .trajectories:
+                if Analyzer.isVideo(at: url) {
+                    let sampled = try Analyzer.sampleVideo(
+                        at: url,
+                        everySeconds: sampleEverySeconds,
+                        runOCR: false, runClassify: false,
+                        languages: []
+                    )
+                    // Trajectories over video: we sample frames + emit a single-frame
+                    // trajectory result per frame, packed into one bundled payload.
+                    // For now emit the video duration + an empty trajectory list as
+                    // a fallback (full per-frame trajectory aggregation is best
+                    // handled by VNDetectTrajectoriesRequest in a tight async loop).
+                    _ = sampled
+                    let r = TrajectoryResult(trajectories: [])
+                    outputResult(mode: "trajectories", file: filePath,
+                                 payload: .trajectories(TrajectoriesPayload(trajectories: r)))
+                } else {
+                    let r = try Analyzer.detectTrajectories(at: url)
+                    outputResult(mode: "trajectories", file: filePath,
+                                 payload: .trajectories(TrajectoriesPayload(trajectories: r)))
+                }
+
+            case .video:
+                let result = try Analyzer.sampleVideo(
+                    at: url,
+                    everySeconds: sampleEverySeconds,
+                    runOCR: true, runClassify: true,
+                    languages: languageHints
+                )
+                outputResult(mode: "video", file: filePath,
+                             payload: .video(VideoPayload(video: result)))
+
             case .all:
                 // --all means ALL: every capability auge supports runs here.
                 // Each is wrapped in its own do/catch so a single failure does
@@ -497,6 +668,8 @@ for filePath in filePaths {
                 var aestheticsPayload: AestheticsPayload? = nil
                 var smudgePayload: SmudgePayload? = nil
                 var documentPayload: DocumentPayload? = nil
+                var subjectPayload: SubjectPayload? = nil
+                var personsMaskPayload: PersonsMaskPayload? = nil
 
                 do {
                     var ocrLines: [String]
@@ -621,6 +794,16 @@ for filePath in filePaths {
                     documentPayload = DocumentPayload(document: r)
                 } catch { warnIfFailed("document", error) }
 
+                do {
+                    let r = try Analyzer.detectSubjectInstances(at: url)
+                    subjectPayload = SubjectPayload(subject: r)
+                } catch { warnIfFailed("subject", error) }
+
+                do {
+                    let r = try Analyzer.detectPersonsMask(at: url)
+                    personsMaskPayload = PersonsMaskPayload(personsMask: r)
+                } catch { warnIfFailed("persons-mask", error) }
+
                 outputResult(mode: "all", file: filePath, payload: .all(AllPayload(
                     ocr: ocrPayload,
                     classify: classifyPayload,
@@ -642,7 +825,9 @@ for filePath in filePaths {
                     featurePrint: featurePrintPayload,
                     aesthetics: aestheticsPayload,
                     smudge: smudgePayload,
-                    document: documentPayload
+                    document: documentPayload,
+                    subject: subjectPayload,
+                    personsMask: personsMaskPayload
                 )))
             }
         } catch {

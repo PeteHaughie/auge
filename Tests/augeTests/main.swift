@@ -62,6 +62,9 @@ suite("ImageSizePolicyTests") { runImageSizePolicyTests() }
 suite("CleanChunkerTests") { runCleanChunkerTests() }
 suite("LineMergerTests") { runLineMergerTests() }
 suite("NewCapabilityFormatterTests") { runNewCapabilityFormatterTests() }
+suite("MaskAnalysisTests") { runMaskAnalysisTests() }
+suite("CoreMLResultTests") { runCoreMLResultTests() }
+suite("VideoHelpersTests") { runVideoHelpersTests() }
 
 // MARK: - Summary
 

@@ -51,6 +51,14 @@ enum ResultPayload: Encodable {
     case aesthetics(AestheticsPayload)
     case smudge(SmudgePayload)
     case document(DocumentPayload)
+    case subject(SubjectPayload)
+    case personsMask(PersonsMaskPayload)
+    case model(ModelPayload)
+    case motion(MotionPayload)
+    case align(AlignPayload)
+    case track(TrackPayload)
+    case trajectories(TrajectoriesPayload)
+    case video(VideoPayload)
     case all(AllPayload)
 
     func encode(to encoder: Encoder) throws {
@@ -78,6 +86,14 @@ enum ResultPayload: Encodable {
         case .aesthetics(let p): try container.encode(p)
         case .smudge(let p): try container.encode(p)
         case .document(let p): try container.encode(p)
+        case .subject(let p): try container.encode(p)
+        case .personsMask(let p): try container.encode(p)
+        case .model(let p): try container.encode(p)
+        case .motion(let p): try container.encode(p)
+        case .align(let p): try container.encode(p)
+        case .track(let p): try container.encode(p)
+        case .trajectories(let p): try container.encode(p)
+        case .video(let p): try container.encode(p)
         case .all(let p): try container.encode(p)
         }
     }
@@ -186,6 +202,39 @@ struct DocumentPayload: Encodable {
     let document: DocumentResult?
 }
 
+struct SubjectPayload: Encodable {
+    let subject: SubjectResult
+}
+
+struct PersonsMaskPayload: Encodable {
+    let personsMask: PersonsMaskResult
+    enum CodingKeys: String, CodingKey { case personsMask = "persons_mask" }
+}
+
+struct ModelPayload: Encodable {
+    let model: CoreMLResult
+}
+
+struct MotionPayload: Encodable {
+    let motion: MotionResult
+}
+
+struct AlignPayload: Encodable {
+    let align: AlignResult
+}
+
+struct TrackPayload: Encodable {
+    let track: TrackResult
+}
+
+struct TrajectoriesPayload: Encodable {
+    let trajectories: TrajectoryResult
+}
+
+struct VideoPayload: Encodable {
+    let video: VideoResult
+}
+
 /// Combined payload for `--all` mode: every analysis bundled in one response.
 /// Every capability is attempted; failures show up as `null` for that key.
 struct AllPayload: Encodable {
@@ -210,6 +259,8 @@ struct AllPayload: Encodable {
     let aesthetics: AestheticsPayload?
     let smudge: SmudgePayload?
     let document: DocumentPayload?
+    let subject: SubjectPayload?
+    let personsMask: PersonsMaskPayload?
 
     enum CodingKeys: String, CodingKey {
         case ocr
@@ -233,5 +284,7 @@ struct AllPayload: Encodable {
         case aesthetics
         case smudge
         case document
+        case subject
+        case personsMask        = "persons_mask"
     }
 }

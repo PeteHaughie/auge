@@ -66,6 +66,14 @@ private func plainTextFor(payload: ResultPayload) -> String {
     case .aesthetics(let p):         return ResultFormatter.formatAesthetics(p.aesthetics)
     case .smudge(let p):             return ResultFormatter.formatSmudge(p.smudge)
     case .document(let p):           return ResultFormatter.formatDocument(p.document)
+    case .subject(let p):            return ResultFormatter.formatSubject(p.subject)
+    case .personsMask(let p):        return ResultFormatter.formatPersonsMask(p.personsMask)
+    case .model(let p):              return ResultFormatter.formatCoreML(p.model)
+    case .motion(let p):             return ResultFormatter.formatMotion(p.motion)
+    case .align(let p):              return ResultFormatter.formatAlign(p.align)
+    case .track(let p):              return ResultFormatter.formatTrack(p.track)
+    case .trajectories(let p):       return ResultFormatter.formatTrajectories(p.trajectories)
+    case .video(let p):              return ResultFormatter.formatVideo(p.video)
     case .all(let p):                return ResultFormatter.formatAll(
         ocrLines: p.ocr?.lines,
         classifications: p.classify?.classifications,
@@ -99,6 +107,14 @@ private func markdownFor(payload: ResultPayload) -> String {
     case .aesthetics(let p):         return ResultFormatter.markdownAesthetics(p.aesthetics)
     case .smudge(let p):             return ResultFormatter.markdownSmudge(p.smudge)
     case .document(let p):           return ResultFormatter.markdownDocument(p.document)
+    case .subject(let p):            return ResultFormatter.markdownSubject(p.subject)
+    case .personsMask(let p):        return ResultFormatter.markdownPersonsMask(p.personsMask)
+    case .model(let p):              return ResultFormatter.markdownCoreML(p.model)
+    case .motion(let p):             return ResultFormatter.markdownMotion(p.motion)
+    case .align(let p):              return ResultFormatter.markdownAlign(p.align)
+    case .track(let p):              return ResultFormatter.markdownTrack(p.track)
+    case .trajectories(let p):       return ResultFormatter.markdownTrajectories(p.trajectories)
+    case .video(let p):              return ResultFormatter.markdownVideo(p.video)
     case .all(let p):                return ResultFormatter.markdownAll(
         ocrLines: p.ocr?.lines,
         classifications: p.classify?.classifications,
@@ -134,6 +150,7 @@ func printRelease() {
     \(styled("\u{251C}", .dim)) geometry:     rectangles, horizon, contours, text rectangles
     \(styled("\u{251C}", .dim)) saliency:     attention + objectness (boxes only, never heatmap)
     \(styled("\u{251C}", .dim)) embeddings:   feature-print + compare (cosine distance)
+    \(styled("\u{251C}", .dim)) masks:        subject lift, persons mask (bbox + coverage %)
     \(styled("\u{251C}", .dim)) formats:      PNG, JPEG, TIFF, BMP, GIF, HEIC, PDF
     \(styled("\u{2514}", .dim)) output:       plain | json | md | ndjson
 
@@ -174,6 +191,14 @@ func printUsage() {
       \(appName) --aesthetics <image>         Score image aesthetics (utility flag included)
       \(appName) --smudge <image>             Detect lens smudge confidence
       \(appName) --document <image>           Parse structured document (paragraphs, lists, tables)
+      \(appName) --subject <image>            Lift foreground subjects (bbox + area per instance)
+      \(appName) --persons-mask <image>       Person segmentation (coverage % + person regions)
+      \(appName) --model <model> <image>      Run a custom Core ML model (.mlmodel/.mlmodelc)
+      \(appName) --motion <a> <b>             Optical-flow summary (direction + magnitude)
+      \(appName) --align <a> <b>              Image registration transform (translation/homography)
+      \(appName) --track --bbox <x,y,w,h> <frames…>  Track an object across frames
+      \(appName) --trajectories <image>       In-flight object trajectory (single frame)
+      \(appName) <video.mp4> --ocr --every 1s Sample a video, run OCR per frame (NDJSON-friendly)
 
     \(styled("OPTIONS:", .yellow, .bold))
       -o, --output <format>     Output format: plain, json, md, ndjson [default: plain]
@@ -200,6 +225,8 @@ func printUsage() {
           --no-correct          OCR: disable language correction (IDs, codes, plates)
           --with-boxes          OCR: include per-line bounding boxes + confidence in JSON
           --vocab <path>        OCR: custom words file (one word per line) for jargon
+      --bbox <x,y,w,h>      For --track: starting box in normalized 0..1 coords
+      --every <duration>    For video input: frame interval (e.g. 1s, 500ms, 2.5s)
       -h, --help                Show this help
       -v, --version             Print version
           --release             Show detailed release and build info
