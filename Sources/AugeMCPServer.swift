@@ -49,7 +49,21 @@ package enum AugeMCPServer {
                 let json = try JSONSerialization.jsonObject(with: data)
 
                 if let batch = json as? [Any] {
-                    let responses = try batch.compactMap { try handleEnvelope($0, state: &state) }
+                    var responses: [Any] = []
+                    responses.reserveCapacity(batch.count)
+
+                    for envelope in batch {
+                        do {
+                            if let response = try handleEnvelope(envelope, state: &state) {
+                                responses.append(response)
+                            }
+                        } catch let error as MCPProtocolError {
+                            responses.append(errorResponse(id: nil, error: error))
+                        } catch {
+                            responses.append(errorResponse(id: nil, error: .serverError(error.localizedDescription)))
+                        }
+                    }
+
                     if !responses.isEmpty {
                         try writeJSONObject(responses)
                     }
@@ -542,6 +556,8 @@ package enum AugeMCPServer {
                 "properties": [
                     "pathA": ["type": "string", "description": "First image path."],
                     "pathB": ["type": "string", "description": "Second image path."],
+                    "enhance": ["type": "boolean", "description": "Upscale tiny images before OCR."],
+                    "clean": ["type": "boolean", "description": "Post-process OCR text with FoundationModels."],
                     "output": outputSchemaProperty(),
                     "compact": ["type": "boolean", "description": "When output=json, use compact JSON for rendered text."],
                     "quiet": ["type": "boolean", "description": "Suppress notices in the returned text and notice list."],

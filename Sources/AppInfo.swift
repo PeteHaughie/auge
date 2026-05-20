@@ -4,10 +4,10 @@ import AugeCore
 let version = buildVersion
 let appName = "auge"
 
-let exitSuccess: Int32 = 0
-let exitRuntimeError: Int32 = 1
-let exitUsageError: Int32 = 2
-let exitVisionUnavailable: Int32 = 5
+package let exitSuccess: Int32 = 0
+package let exitRuntimeError: Int32 = 1
+package let exitUsageError: Int32 = 2
+package let exitVisionUnavailable: Int32 = 5
 
 func exitCode(for error: AugeError) -> Int32 { error.exitCode }
 
