@@ -2,12 +2,12 @@
 
 [![Version 1.8.0](https://img.shields.io/badge/version-1.8.0-blue)](https://github.com/Arthur-Ficial/auge)
 [![Swift 6.3+](https://img.shields.io/badge/Swift-6.3%2B-F05138?logo=swift&logoColor=white)](https://swift.org)
-[![macOS 26+](https://img.shields.io/badge/macOS-26%2B%20(Tahoe)-000000?logo=apple&logoColor=white)](https://developer.apple.com/macos/)
+[![macOS 26+](https://img.shields.io/badge/macOS-26%2B-000000?logo=apple&logoColor=white)](https://developer.apple.com/macos/)
 [![No Xcode Required](https://img.shields.io/badge/Xcode-not%20required-orange)](https://developer.apple.com/xcode/resources/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![100% On-Device](https://img.shields.io/badge/privacy-100%25%20on--device-green)](https://developer.apple.com/documentation/vision)
 
-Apple's **on-device Vision framework** from the command line — OCR, image classification, barcode detection, and face detection.
+Apple's **on-device Vision framework** from the command line — OCR, classification, detection, structured document analysis, and local agent/MCP integrations.
 
 No API keys. No cloud. No network. The Vision framework is already on your Mac — auge lets you use it from the terminal.
 
@@ -24,7 +24,7 @@ Every Mac ships with Apple's [Vision framework](https://developer.apple.com/docu
 
 ## Requirements & Install
 
-- macOS 26 (Tahoe) — auge bundles Vision capabilities (document parsing, lens smudge, image aesthetics) that require the Tahoe baseline.
+- macOS 26+
 - Building from source requires Command Line Tools with Swift 6.3. No Xcode required.
 
 **Homebrew** (recommended):
@@ -162,14 +162,85 @@ Also in `demo/`:
 - **[faces](./demo/faces)** — count faces across photos with per-file summary
 - **[monitor](./demo/monitor)** — watch mode: periodic screen OCR, alert on text changes or pattern match
 
+## Agent Integrations
+
+auge now ships with two agent-facing surfaces:
+
+- **[`skills/auge/SKILL.md`](./skills/auge/SKILL.md)** — task-oriented guidance for agents deciding when and how to use auge.
+- **`auge-mcp`** — a **local stdio MCP server** that exposes auge capabilities as tools.
+
+This does **not** add a network server mode. `auge-mcp` is a subprocess adapter over stdio only, so auge remains fully local and on-device.
+
+### MCP quick start
+
+```bash
+swift build
+.build/debug/auge-mcp
+```
+
+Typical MCP client configuration:
+
+```json
+{
+  "command": "/absolute/path/to/auge/.build/debug/auge-mcp",
+  "args": []
+}
+```
+
+Available MCP tools mirror the current CLI surface:
+
+- `auge_ocr`
+- `auge_classify`
+- `auge_barcode`
+- `auge_faces`
+- `auge_face_landmarks`
+- `auge_face_quality`
+- `auge_humans`
+- `auge_text_rectangles`
+- `auge_rectangles`
+- `auge_horizon`
+- `auge_animals`
+- `auge_animal_pose`
+- `auge_body_pose`
+- `auge_hand_pose`
+- `auge_saliency_attention`
+- `auge_saliency_objectness`
+- `auge_contours`
+- `auge_feature_print`
+- `auge_compare`
+- `auge_aesthetics`
+- `auge_smudge`
+- `auge_document`
+- `auge_all`
+- `auge_release`
+
 ## CLI Reference
 
 ```
-auge --ocr <image>              Extract text from image (OCR)
-auge --classify <image>         Classify image content
-auge --barcode <image>          Detect barcodes and QR codes
-auge --faces <image>            Detect faces
-auge --release                  Show detailed release and build info
+auge --all <image>                 Run every analysis on the image
+auge --ocr <image>                 Extract text from image (OCR)
+auge --classify <image>            Classify image content
+auge --barcode <image>             Detect barcodes and QR codes
+auge --faces <image>               Detect faces (bounding boxes)
+auge --face-landmarks <image>      Detect 76-point face landmarks + roll/yaw/pitch
+auge --face-quality <image>        Per-face capture quality score
+auge --humans <image>              Detect humans (bounding boxes)
+auge --text-rectangles <image>     Detect text regions (no recognition)
+auge --rectangles <image>          Detect quadrilaterals (paper, screens, signs)
+auge --horizon <image>             Detect horizon angle
+auge --animals <image>             Detect cats and dogs
+auge --animal-pose <image>         Detect animal body pose joints
+auge --body-pose <image>           Detect human body pose joints
+auge --hand-pose <image>           Detect hand pose keypoints
+auge --saliency-attention <image>  Salient regions (attention-based, boxes only)
+auge --saliency-objectness <image> Salient regions (object-based, boxes only)
+auge --contours <image>            Detect vector contours
+auge --feature-print <image>       Image embedding (descriptor vector)
+auge --compare <a> <b>             Cosine distance between two images
+auge --aesthetics <image>          Score image aesthetics (utility flag included)
+auge --smudge <image>              Detect lens smudge confidence
+auge --document <image>            Parse structured document (paragraphs, lists, tables)
+auge --release                     Show detailed release and build info
 ```
 
 ### Options
@@ -190,6 +261,13 @@ auge --release                  Show detailed release and build info
 | `--clean` | FoundationModels post-pass: dehyphenate, reflow, fix OCR errors (macOS 26+) |
 | `--top <n>` | Max classification results (default: 10) |
 | `--min-confidence <n>` | Min confidence threshold 0-1 (default: 0.01) |
+| `--upper-body-only` | For `--humans`: detect upper body only |
+| `--max-hands <n>` | For `--hand-pose`: max hands (default: 2) |
+| `--auto-lang` | OCR: auto-detect language (single pass, ignores `--langs`) |
+| `--fast` | OCR: use fast recognition level |
+| `--no-correct` | OCR: disable language correction |
+| `--with-boxes` | OCR: include per-line bounding boxes + confidence in JSON |
+| `--vocab <path>` | OCR: custom words file (one word per line) |
 | `-v, --version` | Print version |
 | `--release` | Show detailed version, build, and capability info |
 | `-h, --help` | Show help |
@@ -217,6 +295,25 @@ auge --release                  Show detailed release and build info
 | `--classify` | `VNClassifyImageRequest` | 12+ | Labels with confidence |
 | `--barcode` | `VNDetectBarcodesRequest` | 10.13+ | Payload + symbology |
 | `--faces` | `VNDetectFaceRectanglesRequest` | 10.13+ | Count + bounding boxes |
+| `--face-landmarks` | `VNDetectFaceLandmarksRequest` | 10.13+ | 76-point landmarks + roll/yaw/pitch |
+| `--face-quality` | `VNDetectFaceCaptureQualityRequest` | 10.13+ | Per-face quality scores |
+| `--humans` | `VNDetectHumanRectanglesRequest` | 10.15+ | Human bounding boxes |
+| `--text-rectangles` | `VNDetectTextRectanglesRequest` | 10.13+ | Text region boxes |
+| `--rectangles` | `VNDetectRectanglesRequest` | 10.13+ | Quadrilaterals + confidence |
+| `--horizon` | `VNDetectHorizonRequest` | 10.13+ | Horizon angle |
+| `--animals` | `VNRecognizeAnimalsRequest` | 11+ | Cat/dog labels + boxes |
+| `--animal-pose` | `VNDetectAnimalBodyPoseRequest` | 14+ | Animal pose joints |
+| `--body-pose` | `VNDetectHumanBodyPoseRequest` | 14+ | Human pose joints |
+| `--hand-pose` | `VNDetectHumanHandPoseRequest` | 14+ | Hand pose keypoints |
+| `--saliency-attention` | `VNGenerateAttentionBasedSaliencyImageRequest` | 13+ | Salient boxes |
+| `--saliency-objectness` | `VNGenerateObjectnessBasedSaliencyImageRequest` | 13+ | Salient boxes |
+| `--contours` | `VNDetectContoursRequest` | 14+ | Vector contours |
+| `--feature-print` | `VNGenerateImageFeaturePrintRequest` | 13+ | Embedding vector |
+| `--compare` | Feature-print distance | 13+ | Cosine distance |
+| `--aesthetics` | `CalculateImageAestheticsScoresRequest` | 15+ | Overall score + utility flag |
+| `--smudge` | `DetectLensSmudgeRequest` | 26+ | Smudge confidence |
+| `--document` | `RecognizeDocumentsRequest` | 26+ | Paragraphs, lists, tables |
+| `--all` | Combined | mixed | One response containing all supported analyses |
 
 ### Supported Image Formats
 
@@ -225,21 +322,22 @@ PNG, JPEG, TIFF, BMP, GIF, HEIC, PDF
 ## Architecture
 
 ```
-CLI (--ocr/--classify/--barcode/--faces)
+CLI / MCP stdio
   │
+  ├─→ AugeCommandLine / AugeMCPServer
+  ├─→ shared execution layer
   ├─→ ImageSource.validatePath()     — file validation (AugeCore)
-  ├─→ Analyzer.recognizeText()       — VNRecognizeTextRequest
-  ├─→ Analyzer.classifyImage()       — VNClassifyImageRequest
-  ├─→ Analyzer.detectBarcodes()      — VNDetectBarcodesRequest
-  └─→ Analyzer.detectFaces()         — VNDetectFaceRectanglesRequest
-       │
-       └─→ Vision framework (100% on-device, zero network)
+  ├─→ Analyzer.swift                 — classic Vision requests
+  ├─→ TahoeAnalyzer.swift            — newer Swift Vision requests
+  └─→ Vision framework (100% on-device, zero network)
 ```
 
-Built with Swift 6.3 strict concurrency. Single `Package.swift`, three targets:
+Built with Swift 6.3 strict concurrency. Single `Package.swift`, four targets:
 - `AugeCore` — pure logic library (no Vision dependency, unit-testable)
-- `auge` — executable (CLI + Vision framework)
-- `auge-tests` — 115 unit tests, pure Swift runner (no XCTest)
+- `AugeApp` — shared app logic (CLI runtime, MCP runtime, Vision integration)
+- `auge` — executable CLI entrypoint
+- `auge-mcp` — executable local stdio MCP server
+- `auge-tests` — pure Swift runner (no XCTest)
 
 **No Xcode required.** Builds and tests with Command Line Tools only.
 
@@ -259,8 +357,10 @@ make release-major              # bump major: 0.x.y -> 1.0.0
 swift build                     # quick debug build
 
 # Tests
-swift run auge-tests            # 115 pure Swift unit tests (no XCTest needed)
+swift run auge-tests            # pure Swift unit tests (no XCTest needed)
 bash Tests/integration/run.sh   # 17 integration tests (end-to-end CLI)
+swift run auge-mcp              # start local stdio MCP server
+bash Tests/integration/run-mcp.sh .build/debug/auge-mcp   # MCP integration tests
 ```
 
 Every `make build`/`make install` automatically:
@@ -270,17 +370,8 @@ Every `make build`/`make install` automatically:
 
 ### Test Coverage
 
-| Suite | Tests | Covers |
-|-------|-------|--------|
-| AugeErrorTests | 10 | Error classification, CLI labels, exit codes, messages |
-| AugeErrorDeepTests | 18 | Every keyword variant, case insensitivity, passthrough, cross-type |
-| ImageSourceTests | 16 | Extension validation, path validation |
-| ImageSourceDeepTests | 11 | Unicode paths, URL correctness, error propagation, exhaustive formats |
-| ResultFormatterTests | 15 | OCR, classification, barcode, face formatting + JSON encoding |
-| ResultFormatterDeepTests | 23 | Exact formats, boundary values, round-trip JSON, key names, unicode |
-| CLIParsingTests | 22 | Edge cases, dotfiles, special chars, stress tests |
-| Integration | 17 | CLI basics, exit codes, OCR, classify, faces, barcodes, piping, quiet |
-| **Total** | **132** | |
+- Pure Swift unit tests cover formatters, parsing helpers, error classification, image validation, PDF detection, capability metadata, and the shared execution/MCP mapping layer.
+- Integration tests cover both the CLI and the stdio MCP server.
 
 ## Part of the apfel ecosystem
 
