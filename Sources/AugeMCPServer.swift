@@ -53,14 +53,15 @@ package enum AugeMCPServer {
                     responses.reserveCapacity(batch.count)
 
                     for envelope in batch {
+                        let responseID = batchResponseID(for: envelope)
                         do {
                             if let response = try handleEnvelope(envelope, state: &state) {
                                 responses.append(response)
                             }
                         } catch let error as MCPProtocolError {
-                            responses.append(errorResponse(id: nil, error: error))
+                            responses.append(errorResponse(id: responseID, error: error))
                         } catch {
-                            responses.append(errorResponse(id: nil, error: .serverError(error.localizedDescription)))
+                            responses.append(errorResponse(id: responseID, error: .serverError(error.localizedDescription)))
                         }
                     }
 
@@ -141,6 +142,13 @@ package enum AugeMCPServer {
             guard hasIDMember else { return nil }
             return errorResponse(id: responseID, error: .serverError(error.localizedDescription))
         }
+    }
+
+    private static func batchResponseID(for envelope: Any) -> Any? {
+        guard let request = envelope as? [String: Any], request.keys.contains("id") else {
+            return nil
+        }
+        return try? validateRequestID(request["id"])
     }
 
     private static func handleInitialize(id: Any?, params: [String: Any], state: inout MCPServerState) throws -> Any {
@@ -249,7 +257,6 @@ package enum AugeMCPServer {
 
     private static func executeCompare(arguments: [String: Any]) throws -> [String: Any] {
         var options = AugeExecutionOptions()
-        try configureOutputAgnostic(&options, arguments)
         let output = try parseOutputFormat(arguments)
         let quiet = arguments["quiet"] as? Bool ?? false
 
@@ -262,11 +269,6 @@ package enum AugeMCPServer {
 
         let report = AugeExecutionEngine.run(.init(mode: .compare, filePaths: [pathA, pathB], options: options))
         return try toolResult(report: report, output: output.format, compact: output.compact, quiet: quiet)
-    }
-
-    private static func configureOutputAgnostic(_ options: inout AugeExecutionOptions, _ arguments: [String: Any]) throws {
-        if let enhance = arguments["enhance"] as? Bool { options.enhanceImages = enhance }
-        if let clean = arguments["clean"] as? Bool { options.cleanText = clean }
     }
 
     private static func configureOCR(_ options: inout AugeExecutionOptions, _ arguments: [String: Any]) throws {
@@ -556,8 +558,6 @@ package enum AugeMCPServer {
                 "properties": [
                     "pathA": ["type": "string", "description": "First image path."],
                     "pathB": ["type": "string", "description": "Second image path."],
-                    "enhance": ["type": "boolean", "description": "Upscale tiny images before OCR."],
-                    "clean": ["type": "boolean", "description": "Post-process OCR text with FoundationModels."],
                     "output": outputSchemaProperty(),
                     "compact": ["type": "boolean", "description": "When output=json, use compact JSON for rendered text."],
                     "quiet": ["type": "boolean", "description": "Suppress notices in the returned text and notice list."],
