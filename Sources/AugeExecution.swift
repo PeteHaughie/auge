@@ -655,6 +655,8 @@ package enum AugeExecutionEngine {
         var aestheticsPayload: AestheticsPayload? = nil
         var smudgePayload: SmudgePayload? = nil
         var documentPayload: DocumentPayload? = nil
+        var subjectPayload: SubjectPayload? = nil
+        var personsMaskPayload: PersonsMaskPayload? = nil
 
         do {
             var ocrLines: [String]
@@ -813,6 +815,18 @@ package enum AugeExecutionEngine {
             warn("document", error)
         }
 
+        do {
+            subjectPayload = .init(subject: try Analyzer.detectSubjectInstances(at: url))
+        } catch {
+            warn("subject", error)
+        }
+
+        do {
+            personsMaskPayload = .init(personsMask: try Analyzer.detectPersonsMask(at: url))
+        } catch {
+            warn("persons-mask", error)
+        }
+
         return AllPayload(
             ocr: ocrPayload,
             classify: classifyPayload,
@@ -834,7 +848,9 @@ package enum AugeExecutionEngine {
             featurePrint: featurePrintPayload,
             aesthetics: aestheticsPayload,
             smudge: smudgePayload,
-            document: documentPayload
+            document: documentPayload,
+            subject: subjectPayload,
+            personsMask: personsMaskPayload
         )
     }
 }
