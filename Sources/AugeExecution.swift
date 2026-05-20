@@ -16,6 +16,9 @@ package struct AugeExecutionOptions: Sendable {
     package var ocrNoCorrect: Bool = false
     package var ocrWithBoxes: Bool = false
     package var ocrCustomWords: [String] = []
+    package var modelPath: String? = nil
+    package var trackBoundingBox: BoundingBox? = nil
+    package var videoEverySeconds: Double = 1.0
 
     package init() {}
 }
@@ -107,6 +110,14 @@ package extension AnalysisMode {
         case .aesthetics: return "aesthetics"
         case .smudge: return "smudge"
         case .document: return "document"
+        case .subject: return "subject"
+        case .personsMask: return "persons-mask"
+        case .model: return "model"
+        case .motion: return "motion"
+        case .align: return "align"
+        case .track: return "track"
+        case .trajectories: return "trajectories"
+        case .video: return "video"
         case .all: return "all"
         }
     }
@@ -186,6 +197,125 @@ package enum AugeExecutionEngine {
                 } catch {
                     addFailure(file: nil, AugeError.classify(error))
                 }
+            }
+
+            return AugeExecutionReport(mode: request.mode, outcomes: outcomes)
+        }
+
+        if request.mode == .motion {
+            guard request.filePaths.count == 2 else {
+                addFailure(file: nil, .unknown("--motion requires exactly two image paths"))
+                return AugeExecutionReport(mode: request.mode, outcomes: outcomes)
+            }
+
+            let a = request.filePaths[0]
+            let b = request.filePaths[1]
+            switch (ImageSource.validatePath(a), ImageSource.validatePath(b)) {
+            case (.failure(let error), _), (_, .failure(let error)):
+                addFailure(file: nil, error)
+            case (.success(let urlA), .success(let urlB)):
+                do {
+                    let result = try Analyzer.motion(from: urlA, to: urlB)
+                    outcomes.append(.response(makeResponse(
+                        mode: .motion,
+                        file: "\(a) -> \(b)",
+                        payload: .motion(MotionPayload(motion: result))
+                    )))
+                } catch {
+                    addFailure(file: nil, AugeError.classify(error))
+                }
+            }
+
+            return AugeExecutionReport(mode: request.mode, outcomes: outcomes)
+        }
+
+        if request.mode == .align {
+            guard request.filePaths.count == 2 else {
+                addFailure(file: nil, .unknown("--align requires exactly two image paths"))
+                return AugeExecutionReport(mode: request.mode, outcomes: outcomes)
+            }
+
+            let a = request.filePaths[0]
+            let b = request.filePaths[1]
+            switch (ImageSource.validatePath(a), ImageSource.validatePath(b)) {
+            case (.failure(let error), _), (_, .failure(let error)):
+                addFailure(file: nil, error)
+            case (.success(let urlA), .success(let urlB)):
+                do {
+                    let result = try Analyzer.align(from: urlA, to: urlB)
+                    outcomes.append(.response(makeResponse(
+                        mode: .align,
+                        file: "\(a) -> \(b)",
+                        payload: .align(AlignPayload(align: result))
+                    )))
+                } catch {
+                    addFailure(file: nil, AugeError.classify(error))
+                }
+            }
+
+            return AugeExecutionReport(mode: request.mode, outcomes: outcomes)
+        }
+
+        if request.mode == .model {
+            guard let modelPath = options.modelPath, !modelPath.isEmpty else {
+                addFailure(file: nil, .unknown("--model requires a path to .mlmodel or .mlmodelc"))
+                return AugeExecutionReport(mode: request.mode, outcomes: outcomes)
+            }
+            guard request.filePaths.count == 1 else {
+                addFailure(file: nil, .unknown("--model requires exactly one image path"))
+                return AugeExecutionReport(mode: request.mode, outcomes: outcomes)
+            }
+            let filePath = request.filePaths[0]
+            switch ImageSource.validatePath(filePath) {
+            case .failure(let error):
+                addFailure(file: filePath, error)
+            case .success(let imageURL):
+                do {
+                    let result = try Analyzer.runCoreMLModel(modelPath: modelPath, imageURL: imageURL)
+                    outcomes.append(.response(makeResponse(
+                        mode: .model,
+                        file: filePath,
+                        payload: .model(ModelPayload(model: result))
+                    )))
+                } catch {
+                    addFailure(file: filePath, AugeError.classify(error))
+                }
+            }
+
+            return AugeExecutionReport(mode: request.mode, outcomes: outcomes)
+        }
+
+        if request.mode == .track {
+            guard let initialBox = options.trackBoundingBox else {
+                addFailure(file: nil, .unknown("--track requires --bbox x,y,w,h"))
+                return AugeExecutionReport(mode: request.mode, outcomes: outcomes)
+            }
+            guard !request.filePaths.isEmpty else {
+                addFailure(file: nil, .unknown("--track requires at least one frame path"))
+                return AugeExecutionReport(mode: request.mode, outcomes: outcomes)
+            }
+
+            var frameURLs: [URL] = []
+            frameURLs.reserveCapacity(request.filePaths.count)
+            for filePath in request.filePaths {
+                switch ImageSource.validatePath(filePath) {
+                case .failure(let error):
+                    addFailure(file: filePath, error)
+                    return AugeExecutionReport(mode: request.mode, outcomes: outcomes)
+                case .success(let url):
+                    frameURLs.append(url)
+                }
+            }
+
+            do {
+                let result = try Analyzer.track(initialBox: initialBox, frames: frameURLs)
+                outcomes.append(.response(makeResponse(
+                    mode: .track,
+                    file: request.filePaths.joined(separator: ","),
+                    payload: .track(TrackPayload(track: result))
+                )))
+            } catch {
+                addFailure(file: nil, AugeError.classify(error))
             }
 
             return AugeExecutionReport(mode: request.mode, outcomes: outcomes)
@@ -373,6 +503,44 @@ package enum AugeExecutionEngine {
                             payload: .document(.init(document: result))
                         )))
 
+                    case .subject:
+                        let result = try Analyzer.detectSubjectInstances(at: url)
+                        outcomes.append(.response(makeResponse(
+                            mode: .subject,
+                            file: filePath,
+                            payload: .subject(.init(subject: result))
+                        )))
+
+                    case .personsMask:
+                        let result = try Analyzer.detectPersonsMask(at: url)
+                        outcomes.append(.response(makeResponse(
+                            mode: .personsMask,
+                            file: filePath,
+                            payload: .personsMask(.init(personsMask: result))
+                        )))
+
+                    case .trajectories:
+                        let result = try Analyzer.detectTrajectories(at: url)
+                        outcomes.append(.response(makeResponse(
+                            mode: .trajectories,
+                            file: filePath,
+                            payload: .trajectories(.init(trajectories: result))
+                        )))
+
+                    case .video:
+                        let result = try Analyzer.sampleVideo(
+                            at: url,
+                            everySeconds: options.videoEverySeconds,
+                            runOCR: true,
+                            runClassify: true,
+                            languages: options.languageHints
+                        )
+                        outcomes.append(.response(makeResponse(
+                            mode: .video,
+                            file: filePath,
+                            payload: .video(.init(video: result))
+                        )))
+
                     case .all:
                         outcomes.append(.response(makeResponse(
                             mode: .all,
@@ -381,6 +549,8 @@ package enum AugeExecutionEngine {
                         )))
 
                     case .compare:
+                        break
+                    case .model, .motion, .align, .track:
                         break
                     }
                 } catch {

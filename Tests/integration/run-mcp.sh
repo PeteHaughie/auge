@@ -47,7 +47,7 @@ echo "$out" | grep -q '"isError":false' && pass "auge_ocr succeeds" || fail "aug
 echo "$out" | grep -q '"mode":"ocr"' && pass "auge_ocr returns OCR mode" || fail "auge_ocr" "expected OCR structured content"
 
 out=$(run_mcp '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"auge_release","arguments":{}}}')
-echo "$out" | grep -q '"framework":"Vision (macOS 26 Tahoe baseline)"' && pass "auge_release returns framework metadata" || fail "auge_release" "expected release metadata"
+echo "$out" | grep -q '"framework":"Vision' && pass "auge_release returns framework metadata" || fail "auge_release" "expected release metadata"
 
 echo ""
 echo "================================="

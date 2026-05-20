@@ -1,6 +1,16 @@
 import Foundation
 import AugeCore
 
+private let sigintAnsiReset: [UInt8] = [0x1B, 0x5B, 0x30, 0x6D]
+private let sigintNewline: [UInt8] = [0x0A]
+
+private func writeSignalBytes(_ fd: Int32, _ bytes: [UInt8]) {
+    bytes.withUnsafeBytes { rawBuffer in
+        guard let baseAddress = rawBuffer.baseAddress else { return }
+        _ = write(fd, baseAddress, rawBuffer.count)
+    }
+}
+
 private enum AugeCLIAction {
     case run(request: AugeExecutionRequest, cleanupPaths: [String])
     case help
@@ -42,9 +52,9 @@ package enum AugeCommandLine {
 
         signal(SIGINT) { _ in
             if isatty(STDOUT_FILENO) != 0 {
-                FileHandle.standardOutput.write(Data("\u{001B}[0m".utf8))
+                writeSignalBytes(STDOUT_FILENO, sigintAnsiReset)
             }
-            FileHandle.standardError.write(Data("\n".utf8))
+            writeSignalBytes(STDERR_FILENO, sigintNewline)
             _exit(130)
         }
 
@@ -155,6 +165,20 @@ package enum AugeCommandLine {
             case "--aesthetics": mode = .aesthetics
             case "--smudge": mode = .smudge
             case "--document": mode = .document
+            case "--subject": mode = .subject
+            case "--persons-mask": mode = .personsMask
+            case "--model":
+                mode = .model
+                i += 1
+                guard i < args.count else {
+                    throw CLIParseError.usage("--model requires a path to .mlmodel or .mlmodelc")
+                }
+                options.modelPath = args[i]
+            case "--motion": mode = .motion
+            case "--align": mode = .align
+            case "--track": mode = .track
+            case "--trajectories": mode = .trajectories
+            case "--video": mode = .video
             case "--all": mode = .all
 
             case "--clipboard":
@@ -242,6 +266,20 @@ package enum AugeCommandLine {
                     throw CLIParseError.usage("--vocab: could not read \(args[i]): \(error.localizedDescription)")
                 }
 
+            case "--bbox":
+                i += 1
+                guard i < args.count, let bbox = BBoxString.parse(args[i]) else {
+                    throw CLIParseError.usage("--bbox requires x,y,w,h with normalized values in [0,1]")
+                }
+                options.trackBoundingBox = bbox
+
+            case "--every":
+                i += 1
+                guard i < args.count, let seconds = IntervalParser.parse(args[i]) else {
+                    throw CLIParseError.usage("--every requires a positive duration (e.g. 1s, 500ms, 2.5s)")
+                }
+                options.videoEverySeconds = seconds
+
             default:
                 if args[i].hasPrefix("-") {
                     throw CLIParseError.usage("unknown option: \(args[i])")
@@ -256,26 +294,87 @@ package enum AugeCommandLine {
             throw CLIParseError.usage("no analysis mode specified. See --help.")
         }
 
-        if analysisMode == .compare {
+        switch analysisMode {
+        case .compare:
             guard !useClipboard, filePaths.count == 2 else {
                 throw CLIParseError.usage("--compare requires exactly two image paths")
             }
-
             return ParsedCLI(action: .run(
                 request: .init(mode: analysisMode, filePaths: filePaths, options: options),
                 cleanupPaths: []
             ))
-        }
 
-        let resolved = try resolveInputs(filePaths: filePaths, useClipboard: useClipboard)
-        guard !resolved.filePaths.isEmpty else {
-            throw CLIParseError.usage("no input file specified")
-        }
+        case .motion:
+            guard !useClipboard, filePaths.count == 2 else {
+                throw CLIParseError.usage("--motion requires exactly two image paths")
+            }
+            return ParsedCLI(action: .run(
+                request: .init(mode: analysisMode, filePaths: filePaths, options: options),
+                cleanupPaths: []
+            ))
 
-        return ParsedCLI(action: .run(
-            request: .init(mode: analysisMode, filePaths: resolved.filePaths, options: options),
-            cleanupPaths: resolved.cleanupPaths
-        ))
+        case .align:
+            guard !useClipboard, filePaths.count == 2 else {
+                throw CLIParseError.usage("--align requires exactly two image paths")
+            }
+            return ParsedCLI(action: .run(
+                request: .init(mode: analysisMode, filePaths: filePaths, options: options),
+                cleanupPaths: []
+            ))
+
+        case .model:
+            guard !useClipboard else {
+                throw CLIParseError.usage("--model does not support --clipboard")
+            }
+            guard options.modelPath != nil else {
+                throw CLIParseError.usage("--model requires a path to .mlmodel or .mlmodelc")
+            }
+            guard filePaths.count == 1 else {
+                throw CLIParseError.usage("--model requires exactly one image path")
+            }
+            return ParsedCLI(action: .run(
+                request: .init(mode: analysisMode, filePaths: filePaths, options: options),
+                cleanupPaths: []
+            ))
+
+        case .track:
+            guard !useClipboard else {
+                throw CLIParseError.usage("--track does not support --clipboard")
+            }
+            guard options.trackBoundingBox != nil else {
+                throw CLIParseError.usage("--track requires --bbox x,y,w,h")
+            }
+            guard !filePaths.isEmpty else {
+                throw CLIParseError.usage("--track requires at least one frame path")
+            }
+            return ParsedCLI(action: .run(
+                request: .init(mode: analysisMode, filePaths: filePaths, options: options),
+                cleanupPaths: []
+            ))
+
+        case .video:
+            guard !useClipboard else {
+                throw CLIParseError.usage("--video does not support --clipboard")
+            }
+            guard !filePaths.isEmpty else {
+                throw CLIParseError.usage("--video requires at least one video path")
+            }
+            return ParsedCLI(action: .run(
+                request: .init(mode: analysisMode, filePaths: filePaths, options: options),
+                cleanupPaths: []
+            ))
+
+        default:
+            let resolved = try resolveInputs(filePaths: filePaths, useClipboard: useClipboard)
+            guard !resolved.filePaths.isEmpty else {
+                throw CLIParseError.usage("no input file specified")
+            }
+
+            return ParsedCLI(action: .run(
+                request: .init(mode: analysisMode, filePaths: resolved.filePaths, options: options),
+                cleanupPaths: resolved.cleanupPaths
+            ))
+        }
     }
 
     private static func resolveInputs(filePaths: [String], useClipboard: Bool) throws -> (filePaths: [String], cleanupPaths: [String]) {

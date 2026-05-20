@@ -397,13 +397,13 @@ package enum AugeMCPServer {
             "notices": notices.map {
                 [
                     "kind": $0.kind.rawValue,
-                    "file": $0.file as Any? ?? NSNull(),
+                    "file": $0.file ?? NSNull(),
                     "message": $0.message,
                 ] as [String: Any]
             },
             "errors": report.failures.map {
                 [
-                    "file": $0.file as Any? ?? NSNull(),
+                    "file": $0.file ?? NSNull(),
                     "label": $0.error.cliLabel,
                     "message": $0.error.userMessage,
                     "exitCode": Int($0.error.exitCode),
