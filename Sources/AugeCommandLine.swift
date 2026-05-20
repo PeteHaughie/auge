@@ -256,6 +256,17 @@ package enum AugeCommandLine {
             throw CLIParseError.usage("no analysis mode specified. See --help.")
         }
 
+        if analysisMode == .compare {
+            guard !useClipboard, filePaths.count == 2 else {
+                throw CLIParseError.usage("--compare requires exactly two image paths")
+            }
+
+            return ParsedCLI(action: .run(
+                request: .init(mode: analysisMode, filePaths: filePaths, options: options),
+                cleanupPaths: []
+            ))
+        }
+
         let resolved = try resolveInputs(filePaths: filePaths, useClipboard: useClipboard)
         guard !resolved.filePaths.isEmpty else {
             throw CLIParseError.usage("no input file specified")

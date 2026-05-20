@@ -80,30 +80,38 @@ package enum AugeMCPServer {
         }
 
         let id = request["id"]
-        let params = request["params"] as? [String: Any] ?? [:]
 
         do {
+            let params = try requestObject(from: request["params"], field: "params")
+
             switch method {
             case "initialize":
+                try requireRequestID(id, for: method)
                 return try handleInitialize(id: id, params: params, state: &state)
             case "notifications/initialized":
+                guard state == .waitingForInitializedNotification else {
+                    return nil
+                }
                 state = .running
                 return nil
             case "ping":
+                try requireRequestID(id, for: method)
                 return successResponse(id: id, result: [:])
             case "tools/list":
+                try requireRequestID(id, for: method)
                 guard state != .waitingForInitialize else {
                     throw MCPProtocolError.invalidRequest("initialize must be called before tools/list")
                 }
                 return successResponse(id: id, result: ["tools": toolDefinitions()])
             case "tools/call":
+                try requireRequestID(id, for: method)
                 guard state == .running || state == .waitingForInitializedNotification else {
                     throw MCPProtocolError.invalidRequest("initialize must be called before tools/call")
                 }
                 guard let name = params["name"] as? String else {
                     throw MCPProtocolError.invalidParams("tools/call requires a tool name")
                 }
-                let arguments = params["arguments"] as? [String: Any] ?? [:]
+                let arguments = try paramsObject(from: params["arguments"], field: "arguments")
                 return successResponse(id: id, result: try callTool(named: name, arguments: arguments))
             default:
                 throw MCPProtocolError.methodNotFound("Method not found: \(method)")
@@ -144,8 +152,9 @@ package enum AugeMCPServer {
     private static func callTool(named name: String, arguments: [String: Any]) throws -> [String: Any] {
         switch name {
         case "auge_release":
-            let infoObject = try encodeJSONObject(makeReleaseInfo())
-            let text = "auge v\(version) — \(makeReleaseInfo().framework)"
+            let info = makeReleaseInfo()
+            let infoObject = try encodeJSONObject(info)
+            let text = "auge v\(version) — \(info.framework)"
             return [
                 "content": [["type": "text", "text": text]],
                 "structuredContent": infoObject,
@@ -248,7 +257,7 @@ package enum AugeMCPServer {
         if let fast = arguments["fast"] as? Bool { options.ocrFast = fast }
         if let noCorrect = arguments["noCorrect"] as? Bool { options.ocrNoCorrect = noCorrect }
         if let withBoxes = arguments["withBoxes"] as? Bool { options.ocrWithBoxes = withBoxes }
-        if let vocabWords = arguments["vocabWords"] as? [String] {
+        if let vocabWords = try stringArray(arguments["vocabWords"], field: "vocabWords") {
             options.ocrCustomWords = vocabWords.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         }
         if let vocabPath = arguments["vocabPath"] as? String, !vocabPath.isEmpty {
@@ -316,7 +325,7 @@ package enum AugeMCPServer {
         if let preferEmbedded = arguments["preferEmbedded"] as? Bool {
             options.preferEmbedded = preferEmbedded
         }
-        if let langs = arguments["langs"] as? [String] {
+        if let langs = try stringArray(arguments["langs"], field: "langs") {
             options.languageHints = langs.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         }
         if let enhance = arguments["enhance"] as? Bool { options.enhanceImages = enhance }
@@ -341,7 +350,7 @@ package enum AugeMCPServer {
         if let path = arguments["path"] as? String, !path.isEmpty {
             filePaths.append(path)
         }
-        if let paths = arguments["paths"] as? [String] {
+        if let paths = try stringArray(arguments["paths"], field: "paths") {
             filePaths.append(contentsOf: paths.filter { !$0.isEmpty })
         }
 
@@ -417,6 +426,42 @@ package enum AugeMCPServer {
         }
 
         return parts.joined(separator: "\n\n")
+    }
+
+    private static func requireRequestID(_ id: Any?, for method: String) throws {
+        guard id != nil else {
+            throw MCPProtocolError.invalidRequest("\(method) requires an id")
+        }
+    }
+
+    private static func requestObject(from value: Any?, field: String) throws -> [String: Any] {
+        guard let value else { return [:] }
+        guard let object = value as? [String: Any] else {
+            throw MCPProtocolError.invalidRequest("\(field) must be a JSON object")
+        }
+        return object
+    }
+
+    private static func paramsObject(from value: Any?, field: String) throws -> [String: Any] {
+        guard let value else { return [:] }
+        guard let object = value as? [String: Any] else {
+            throw MCPProtocolError.invalidParams("\(field) must be an object")
+        }
+        return object
+    }
+
+    private static func stringArray(_ value: Any?, field: String) throws -> [String]? {
+        guard let value else { return nil }
+        guard let array = value as? [Any] else {
+            throw MCPProtocolError.invalidParams("\(field) must be an array of strings")
+        }
+
+        let strings = array.compactMap { $0 as? String }
+        guard strings.count == array.count else {
+            throw MCPProtocolError.invalidParams("\(field) must contain only strings")
+        }
+
+        return strings
     }
 
     private static func toolDefinitions() -> [[String: Any]] {

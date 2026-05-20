@@ -1,5 +1,6 @@
 import Foundation
 import AugeCore
+import AugeApp
 
 // These test the pure-logic argument parsing helpers that live in AugeCore.
 // The actual CLI dispatch is tested by integration tests.
@@ -146,5 +147,15 @@ func runCLIParsingTests() {
         let lines = output.components(separatedBy: "\n")
         // First line should have highest confidence (item19 = 95%)
         try assertTrue(lines[0].contains("item19"), "first: \(lines[0])")
+    }
+
+    test("compare with one path returns usage error") {
+        let exitCode = AugeCommandLine.main(arguments: ["auge", "--compare", "one.png"])
+        try assertEqual(exitCode, exitUsageError)
+    }
+
+    test("compare does not accept clipboard input") {
+        let exitCode = AugeCommandLine.main(arguments: ["auge", "--compare", "--clipboard"])
+        try assertEqual(exitCode, exitUsageError)
     }
 }
