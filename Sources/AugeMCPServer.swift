@@ -79,9 +79,13 @@ package enum AugeMCPServer {
             throw MCPProtocolError.invalidRequest("method is required")
         }
 
-        let id = request["id"]
+        let rawID = request["id"]
+        let hasIDMember = request.keys.contains("id")
+        var responseID: Any?
 
         do {
+            let id = try validateRequestID(rawID)
+            responseID = id
             let params = try requestObject(from: request["params"], field: "params")
 
             switch method {
@@ -117,11 +121,11 @@ package enum AugeMCPServer {
                 throw MCPProtocolError.methodNotFound("Method not found: \(method)")
             }
         } catch let error as MCPProtocolError {
-            guard id != nil else { return nil }
-            return errorResponse(id: id, error: error)
+            guard hasIDMember else { return nil }
+            return errorResponse(id: responseID, error: error)
         } catch {
-            guard id != nil else { return nil }
-            return errorResponse(id: id, error: .serverError(error.localizedDescription))
+            guard hasIDMember else { return nil }
+            return errorResponse(id: responseID, error: .serverError(error.localizedDescription))
         }
     }
 
@@ -431,6 +435,19 @@ package enum AugeMCPServer {
     private static func requireRequestID(_ id: Any?, for method: String) throws {
         guard id != nil else {
             throw MCPProtocolError.invalidRequest("\(method) requires an id")
+        }
+    }
+
+    private static func validateRequestID(_ id: Any?) throws -> Any? {
+        guard let id else { return nil }
+
+        switch id {
+        case is Bool:
+            throw MCPProtocolError.invalidRequest("id must be a string, number, or null")
+        case is String, is NSNull, is NSNumber:
+            return id
+        default:
+            throw MCPProtocolError.invalidRequest("id must be a string, number, or null")
         }
     }
 
