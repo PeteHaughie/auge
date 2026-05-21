@@ -58,6 +58,29 @@ package enum AugeCommandLine {
             _exit(130)
         }
 
+        return runParsed(arguments: arguments)
+    }
+
+    /// Parse-only entry point for unit tests. Unlike `main(arguments:)`, this does not
+    /// install a SIGINT handler or run any Vision analysis, so it is free of process-wide
+    /// side effects and safe to call from a test suite multiple times.
+    package static func parseArguments(arguments: [String]) -> Int32 {
+        do {
+            let parsed = try parse(arguments: arguments)
+            switch parsed.action {
+            case .usageHelp:
+                return exitUsageError
+            case .help, .version, .release, .run:
+                return exitSuccess
+            }
+        } catch let error as CLIParseError {
+            return error.exitCode
+        } catch {
+            return AugeError.classify(error).exitCode
+        }
+    }
+
+    private static func runParsed(arguments: [String]) -> Int32 {
         do {
             let parsed = try parse(arguments: arguments)
             switch parsed.action {

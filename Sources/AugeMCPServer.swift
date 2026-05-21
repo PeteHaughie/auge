@@ -405,7 +405,7 @@ package enum AugeMCPServer {
     private static func toolResult(report: AugeExecutionReport, output: OutputFormat, compact: Bool, quiet: Bool) throws -> [String: Any] {
         let notices = quiet ? [] : report.notices
         let renderedResponses = report.responses.map { renderedResult(mode: $0.mode, file: $0.file, payload: $0.results, format: output, compact: compact) }
-        let text = summaryText(renderedResponses: renderedResponses, notices: notices, failures: report.failures)
+        let text = summaryText(renderedResponses: renderedResponses, notices: notices, failures: report.failures, outputFormat: output)
 
         let structured: [String: Any] = [
             "mode": report.mode.cliName,
@@ -435,7 +435,7 @@ package enum AugeMCPServer {
         ]
     }
 
-    private static func summaryText(renderedResponses: [String], notices: [AugeExecutionNotice], failures: [AugeExecutionFailure]) -> String {
+    private static func summaryText(renderedResponses: [String], notices: [AugeExecutionNotice], failures: [AugeExecutionFailure], outputFormat: OutputFormat) -> String {
         var parts: [String] = []
         parts.append(contentsOf: renderedResponses)
         parts.append(contentsOf: notices.map(\.message))
@@ -445,7 +445,8 @@ package enum AugeMCPServer {
             return "No output."
         }
 
-        return parts.joined(separator: "\n\n")
+        let separator = outputFormat == .ndjson ? "\n" : "\n\n"
+        return parts.joined(separator: separator)
     }
 
     private static func requireRequestID(_ id: Any?, for method: String) throws {

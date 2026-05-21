@@ -150,12 +150,12 @@ func runCLIParsingTests() {
     }
 
     test("compare with one path returns usage error") {
-        let exitCode = AugeCommandLine.main(arguments: ["auge", "--compare", "one.png"])
+        let exitCode = AugeCommandLine.parseArguments(arguments: ["auge", "--compare", "one.png"])
         try assertEqual(exitCode, exitUsageError)
     }
 
     test("compare does not accept clipboard input") {
-        let exitCode = AugeCommandLine.main(arguments: ["auge", "--compare", "--clipboard"])
+        let exitCode = AugeCommandLine.parseArguments(arguments: ["auge", "--compare", "--clipboard"])
         try assertEqual(exitCode, exitUsageError)
     }
 }

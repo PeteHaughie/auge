@@ -289,30 +289,33 @@ auge --release                     Show detailed release and build info
 
 ## Vision Capabilities
 
-| Mode | Framework Request | macOS | Output |
-|------|-------------------|-------|--------|
-| `--ocr` | `VNRecognizeTextRequest` | 10.15+ | Text lines |
-| `--classify` | `VNClassifyImageRequest` | 12+ | Labels with confidence |
-| `--barcode` | `VNDetectBarcodesRequest` | 10.13+ | Payload + symbology |
-| `--faces` | `VNDetectFaceRectanglesRequest` | 10.13+ | Count + bounding boxes |
-| `--face-landmarks` | `VNDetectFaceLandmarksRequest` | 10.13+ | 76-point landmarks + roll/yaw/pitch |
-| `--face-quality` | `VNDetectFaceCaptureQualityRequest` | 10.13+ | Per-face quality scores |
-| `--humans` | `VNDetectHumanRectanglesRequest` | 10.15+ | Human bounding boxes |
-| `--text-rectangles` | `VNDetectTextRectanglesRequest` | 10.13+ | Text region boxes |
-| `--rectangles` | `VNDetectRectanglesRequest` | 10.13+ | Quadrilaterals + confidence |
-| `--horizon` | `VNDetectHorizonRequest` | 10.13+ | Horizon angle |
-| `--animals` | `VNRecognizeAnimalsRequest` | 11+ | Cat/dog labels + boxes |
-| `--animal-pose` | `VNDetectAnimalBodyPoseRequest` | 14+ | Animal pose joints |
-| `--body-pose` | `VNDetectHumanBodyPoseRequest` | 14+ | Human pose joints |
-| `--hand-pose` | `VNDetectHumanHandPoseRequest` | 14+ | Hand pose keypoints |
-| `--saliency-attention` | `VNGenerateAttentionBasedSaliencyImageRequest` | 13+ | Salient boxes |
-| `--saliency-objectness` | `VNGenerateObjectnessBasedSaliencyImageRequest` | 13+ | Salient boxes |
-| `--contours` | `VNDetectContoursRequest` | 14+ | Vector contours |
-| `--feature-print` | `VNGenerateImageFeaturePrintRequest` | 13+ | Embedding vector |
-| `--compare` | Feature-print distance | 13+ | Cosine distance |
-| `--aesthetics` | `CalculateImageAestheticsScoresRequest` | 15+ | Overall score + utility flag |
-| `--smudge` | `DetectLensSmudgeRequest` | 26+ | Smudge confidence |
-| `--document` | `RecognizeDocumentsRequest` | 26+ | Paragraphs, lists, tables |
+> **Note:** auge requires macOS 26+. The "Vision API since" column below shows the historical
+> macOS version when each Vision framework API was first introduced, not the auge minimum requirement.
+
+| Mode | Framework Request | Vision API since | Output |
+|------|-------------------|------------------|--------|
+| `--ocr` | `VNRecognizeTextRequest` | 10.15 | Text lines |
+| `--classify` | `VNClassifyImageRequest` | 12 | Labels with confidence |
+| `--barcode` | `VNDetectBarcodesRequest` | 10.13 | Payload + symbology |
+| `--faces` | `VNDetectFaceRectanglesRequest` | 10.13 | Count + bounding boxes |
+| `--face-landmarks` | `VNDetectFaceLandmarksRequest` | 10.13 | 76-point landmarks + roll/yaw/pitch |
+| `--face-quality` | `VNDetectFaceCaptureQualityRequest` | 10.13 | Per-face quality scores |
+| `--humans` | `VNDetectHumanRectanglesRequest` | 10.15 | Human bounding boxes |
+| `--text-rectangles` | `VNDetectTextRectanglesRequest` | 10.13 | Text region boxes |
+| `--rectangles` | `VNDetectRectanglesRequest` | 10.13 | Quadrilaterals + confidence |
+| `--horizon` | `VNDetectHorizonRequest` | 10.13 | Horizon angle |
+| `--animals` | `VNRecognizeAnimalsRequest` | 11 | Cat/dog labels + boxes |
+| `--animal-pose` | `VNDetectAnimalBodyPoseRequest` | 14 | Animal pose joints |
+| `--body-pose` | `VNDetectHumanBodyPoseRequest` | 14 | Human pose joints |
+| `--hand-pose` | `VNDetectHumanHandPoseRequest` | 14 | Hand pose keypoints |
+| `--saliency-attention` | `VNGenerateAttentionBasedSaliencyImageRequest` | 13 | Salient boxes |
+| `--saliency-objectness` | `VNGenerateObjectnessBasedSaliencyImageRequest` | 13 | Salient boxes |
+| `--contours` | `VNDetectContoursRequest` | 14 | Vector contours |
+| `--feature-print` | `VNGenerateImageFeaturePrintRequest` | 13 | Embedding vector |
+| `--compare` | Feature-print distance | 13 | Cosine distance |
+| `--aesthetics` | `CalculateImageAestheticsScoresRequest` | 15 | Overall score + utility flag |
+| `--smudge` | `DetectLensSmudgeRequest` | 26 | Smudge confidence |
+| `--document` | `RecognizeDocumentsRequest` | 26 | Paragraphs, lists, tables |
 | `--all` | Combined | mixed | One response containing all supported analyses |
 
 ### Supported Image Formats
