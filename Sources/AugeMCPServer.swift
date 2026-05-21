@@ -138,7 +138,7 @@ package enum AugeMCPServer {
                 guard let name = params["name"] as? String else {
                     throw MCPProtocolError.invalidParams("tools/call requires a tool name")
                 }
-                let arguments = try paramsObject(from: params["arguments"], field: "arguments")
+                let arguments = try requestObject(from: params["arguments"], field: "arguments")
                 return successResponse(id: id, result: try callTool(named: name, arguments: arguments))
             default:
                 throw MCPProtocolError.methodNotFound("Method not found: \(method)")
@@ -264,7 +264,7 @@ package enum AugeMCPServer {
     }
 
     private static func executeCompare(arguments: [String: Any]) throws -> [String: Any] {
-        var options = AugeExecutionOptions()
+        let options = AugeExecutionOptions()
         let output = try parseOutputFormat(arguments)
         let quiet = arguments["quiet"] as? Bool ?? false
 
@@ -482,14 +482,6 @@ package enum AugeMCPServer {
     }
 
     private static func requestObject(from value: Any?, field: String) throws -> [String: Any] {
-        guard let value else { return [:] }
-        guard let object = value as? [String: Any] else {
-            throw MCPProtocolError.invalidParams("\(field) must be an object")
-        }
-        return object
-    }
-
-    private static func paramsObject(from value: Any?, field: String) throws -> [String: Any] {
         guard let value else { return [:] }
         guard let object = value as? [String: Any] else {
             throw MCPProtocolError.invalidParams("\(field) must be an object")

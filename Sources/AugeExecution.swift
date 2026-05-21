@@ -568,10 +568,13 @@ package enum AugeExecutionEngine {
                         break
 
                     case .all:
+                        var allNotices: [AugeExecutionOutcome] = []
+                        let allPayload = runAll(at: url, filePath: filePath, options: options, notices: &allNotices)
+                        outcomes.append(contentsOf: allNotices)
                         outcomes.append(.response(makeResponse(
                             mode: .all,
                             file: filePath,
-                            payload: .all(runAll(at: url, filePath: filePath, options: options, notices: &outcomes))
+                            payload: .all(allPayload)
                         )))
 
                     case .compare:
