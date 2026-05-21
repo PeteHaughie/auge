@@ -57,6 +57,11 @@ package enum AugeMCPServer {
                 }
 
                 if let batch = json as? [Any] {
+                    if batch.isEmpty {
+                        try writeJSONObject(errorResponse(id: nil, error: .invalidRequest("Batch request must contain at least one call")))
+                        continue
+                    }
+
                     var responses: [Any] = []
                     responses.reserveCapacity(batch.count)
 
