@@ -8,6 +8,7 @@ func runMCPServerTests() {
         try assertFalse(info.version.isEmpty)
         try assertTrue(info.framework.contains("Vision"))
         try assertTrue(info.capabilities.contains { $0.id == "ocr" })
+        try assertTrue(info.capabilities.contains { $0.id == "masks" })
     }
 
     test("analysis mode tool names use auge prefix") {

@@ -55,6 +55,7 @@ package func makeReleaseInfo() -> AugeReleaseInfo {
             .init(id: "document", summary: "structured document extraction"),
             .init(id: "aesthetics", summary: "overall image aesthetics score"),
             .init(id: "smudge", summary: "lens smudge confidence"),
+            .init(id: "masks", summary: "subject lift + persons mask"),
         ]
     )
 }

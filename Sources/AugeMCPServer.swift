@@ -452,6 +452,9 @@ package enum AugeMCPServer {
         }
 
         if parts.isEmpty {
+            if outputFormat == .json || outputFormat == .ndjson {
+                return ""
+            }
             return "No output."
         }
 
