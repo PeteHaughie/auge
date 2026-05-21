@@ -438,8 +438,10 @@ package enum AugeMCPServer {
     private static func summaryText(renderedResponses: [String], notices: [AugeExecutionNotice], failures: [AugeExecutionFailure], outputFormat: OutputFormat) -> String {
         var parts: [String] = []
         parts.append(contentsOf: renderedResponses)
-        parts.append(contentsOf: notices.map(\.message))
-        parts.append(contentsOf: failures.map { "\($0.error.cliLabel) \($0.error.userMessage)" })
+        if outputFormat != .json && outputFormat != .ndjson {
+            parts.append(contentsOf: notices.map(\.message))
+            parts.append(contentsOf: failures.map { "\($0.error.cliLabel) \($0.error.userMessage)" })
+        }
 
         if parts.isEmpty {
             return "No output."

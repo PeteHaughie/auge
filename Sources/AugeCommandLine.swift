@@ -319,7 +319,10 @@ package enum AugeCommandLine {
 
         switch analysisMode {
         case .compare:
-            guard !useClipboard, filePaths.count == 2 else {
+            guard !useClipboard else {
+                throw CLIParseError.usage("--compare does not support --clipboard")
+            }
+            guard filePaths.count == 2 else {
                 throw CLIParseError.usage("--compare requires exactly two image paths")
             }
             return ParsedCLI(action: .run(
@@ -328,7 +331,10 @@ package enum AugeCommandLine {
             ))
 
         case .motion:
-            guard !useClipboard, filePaths.count == 2 else {
+            guard !useClipboard else {
+                throw CLIParseError.usage("--motion does not support --clipboard")
+            }
+            guard filePaths.count == 2 else {
                 throw CLIParseError.usage("--motion requires exactly two image paths")
             }
             return ParsedCLI(action: .run(
@@ -337,7 +343,10 @@ package enum AugeCommandLine {
             ))
 
         case .align:
-            guard !useClipboard, filePaths.count == 2 else {
+            guard !useClipboard else {
+                throw CLIParseError.usage("--align does not support --clipboard")
+            }
+            guard filePaths.count == 2 else {
                 throw CLIParseError.usage("--align requires exactly two image paths")
             }
             return ParsedCLI(action: .run(

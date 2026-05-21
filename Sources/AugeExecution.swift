@@ -321,6 +321,43 @@ package enum AugeExecutionEngine {
             return AugeExecutionReport(mode: request.mode, outcomes: outcomes)
         }
 
+        if request.mode == .video {
+            guard !request.filePaths.isEmpty else {
+                addFailure(file: nil, .unknown("--video requires at least one video path"))
+                return AugeExecutionReport(mode: request.mode, outcomes: outcomes)
+            }
+
+            for filePath in request.filePaths {
+                let url = URL(fileURLWithPath: filePath)
+                guard FileManager.default.fileExists(atPath: filePath) else {
+                    addFailure(file: filePath, .fileNotFound(filePath))
+                    continue
+                }
+                guard Analyzer.videoExtensions.contains(url.pathExtension.lowercased()) else {
+                    addFailure(file: filePath, .unsupportedFormat(url.pathExtension.isEmpty ? "unknown" : url.pathExtension.lowercased()))
+                    continue
+                }
+                do {
+                    let result = try Analyzer.sampleVideo(
+                        at: url,
+                        everySeconds: options.videoEverySeconds,
+                        runOCR: true,
+                        runClassify: true,
+                        languages: options.languageHints
+                    )
+                    outcomes.append(.response(makeResponse(
+                        mode: .video,
+                        file: filePath,
+                        payload: .video(.init(video: result))
+                    )))
+                } catch {
+                    addFailure(file: filePath, AugeError.classify(error))
+                }
+            }
+
+            return AugeExecutionReport(mode: request.mode, outcomes: outcomes)
+        }
+
         for filePath in request.filePaths {
             switch ImageSource.validatePath(filePath) {
             case .failure(let error):
@@ -528,18 +565,7 @@ package enum AugeExecutionEngine {
                         )))
 
                     case .video:
-                        let result = try Analyzer.sampleVideo(
-                            at: url,
-                            everySeconds: options.videoEverySeconds,
-                            runOCR: true,
-                            runClassify: true,
-                            languages: options.languageHints
-                        )
-                        outcomes.append(.response(makeResponse(
-                            mode: .video,
-                            file: filePath,
-                            payload: .video(.init(video: result))
-                        )))
+                        break
 
                     case .all:
                         outcomes.append(.response(makeResponse(
