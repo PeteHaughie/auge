@@ -43,7 +43,7 @@ func renderedResult(mode: String, file: String, payload: ResultPayload, format: 
     }
 }
 
-func plainTextFor(payload: ResultPayload) -> String {
+private func plainTextFor(payload: ResultPayload) -> String {
     switch payload {
     case .ocr(let p):                return p.text
     case .classification(let p):     return ResultFormatter.formatClassification(p.classifications)

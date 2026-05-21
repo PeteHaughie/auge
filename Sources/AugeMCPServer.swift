@@ -458,7 +458,7 @@ package enum AugeMCPServer {
             return "No output."
         }
 
-        let separator = outputFormat == .ndjson ? "\n" : "\n\n"
+        let separator = "\n"
         return parts.joined(separator: separator)
     }
 
