@@ -2,6 +2,7 @@ import Foundation
 import AugeCore
 
 private enum MCPProtocolError: Error {
+    case parseError(String)
     case invalidRequest(String)
     case invalidParams(String)
     case methodNotFound(String)
@@ -9,6 +10,7 @@ private enum MCPProtocolError: Error {
 
     var code: Int {
         switch self {
+        case .parseError: return -32700
         case .invalidRequest: return -32600
         case .invalidParams: return -32602
         case .methodNotFound: return -32601
@@ -18,7 +20,8 @@ private enum MCPProtocolError: Error {
 
     var message: String {
         switch self {
-        case .invalidRequest(let message),
+        case .parseError(let message),
+             .invalidRequest(let message),
              .invalidParams(let message),
              .methodNotFound(let message),
              .serverError(let message):
@@ -46,7 +49,12 @@ package enum AugeMCPServer {
 
             do {
                 let data = Data(line.utf8)
-                let json = try JSONSerialization.jsonObject(with: data)
+                let json: Any
+                do {
+                    json = try JSONSerialization.jsonObject(with: data)
+                } catch {
+                    throw MCPProtocolError.parseError("Invalid JSON payload")
+                }
 
                 if let batch = json as? [Any] {
                     var responses: [Any] = []
@@ -473,7 +481,7 @@ package enum AugeMCPServer {
     private static func requestObject(from value: Any?, field: String) throws -> [String: Any] {
         guard let value else { return [:] }
         guard let object = value as? [String: Any] else {
-            throw MCPProtocolError.invalidRequest("\(field) must be a JSON object")
+            throw MCPProtocolError.invalidParams("\(field) must be an object")
         }
         return object
     }
