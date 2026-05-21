@@ -187,7 +187,7 @@ Typical MCP client configuration:
 }
 ```
 
-Available MCP tools mirror the current CLI surface:
+Available MCP tools currently expose a subset of CLI modes:
 
 - `auge_ocr`
 - `auge_classify`
