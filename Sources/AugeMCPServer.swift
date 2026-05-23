@@ -51,7 +51,7 @@ package enum AugeMCPServer {
                 let data = Data(line.utf8)
                 let json: Any
                 do {
-                    // Parse JSON including fragments (for example bare strings/numbers).
+                    // Parse JSON including fragments (for example, bare strings/numbers).
                     // `handleEnvelope` then rejects non-object payloads as Invalid Request (-32600).
                     json = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
                 } catch {
