@@ -291,7 +291,9 @@ package enum AugeMCPServer {
         if let noCorrect = arguments["noCorrect"] as? Bool { options.ocrNoCorrect = noCorrect }
         if let withBoxes = arguments["withBoxes"] as? Bool { options.ocrWithBoxes = withBoxes }
         if let vocabWords = try stringArray(arguments["vocabWords"], field: "vocabWords") {
-            options.ocrCustomWords = vocabWords.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            options.ocrCustomWords = vocabWords
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
         }
         if let vocabPath = arguments["vocabPath"] as? String, !vocabPath.isEmpty {
             let url = URL(fileURLWithPath: vocabPath)
@@ -359,7 +361,9 @@ package enum AugeMCPServer {
             options.preferEmbedded = preferEmbedded
         }
         if let langs = try stringArray(arguments["langs"], field: "langs") {
-            options.languageHints = langs.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            options.languageHints = langs
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
         }
         if let enhance = arguments["enhance"] as? Bool { options.enhanceImages = enhance }
         if let clean = arguments["clean"] as? Bool { options.cleanText = clean }

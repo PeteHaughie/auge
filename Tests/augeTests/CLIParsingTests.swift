@@ -2,8 +2,8 @@ import Foundation
 import AugeCore
 import AugeApp
 
-// These test the pure-logic argument parsing helpers that live in AugeCore.
-// The actual CLI dispatch is tested by integration tests.
+// These test argument parsing helpers in AugeCore and the shared CLI parsing layer in AugeApp.
+// End-to-end dispatch is covered by integration tests.
 
 func runCLIParsingTests() {
     // --- ImageSource.validatePath edge cases ---
