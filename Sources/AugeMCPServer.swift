@@ -51,6 +51,8 @@ package enum AugeMCPServer {
                 let data = Data(line.utf8)
                 let json: Any
                 do {
+                    // Parse valid JSON fragments so non-object payloads become JSON-RPC Invalid Request (-32600),
+                    // then let `handleEnvelope` enforce object-shaped envelopes.
                     json = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
                 } catch {
                     throw MCPProtocolError.parseError("Invalid JSON payload")
