@@ -63,8 +63,8 @@ package enum AugeCommandLine {
 
     /// Parse-only entry point for unit tests. Unlike `main(arguments:)`, this does not
     /// install a SIGINT handler or run any Vision analysis. It still resets process-global
-    /// output settings (`outputFormat`, `quietMode`, `compactMode`, `noColorFlag`) while
-    /// parsing to keep repeated parse tests deterministic, but does no other process-wide
+    /// output settings (`outputFormat`, `quietMode`, `compactMode`, `noColorFlag`) at the
+    /// start of parsing to keep repeated parse tests deterministic, but does no other process-wide
     /// setup and is safe for test suites.
     package static func parseArguments(arguments: [String]) -> Int32 {
         do {
