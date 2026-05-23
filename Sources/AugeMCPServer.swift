@@ -51,7 +51,7 @@ package enum AugeMCPServer {
                 let data = Data(line.utf8)
                 let json: Any
                 do {
-                    json = try JSONSerialization.jsonObject(with: data)
+                    json = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
                 } catch {
                     throw MCPProtocolError.parseError("Invalid JSON payload")
                 }
