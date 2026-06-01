@@ -161,9 +161,9 @@ func runNewCapabilityFormatterTests() {
 
     test("formatAesthetics shows utility flag") {
         let utility = AestheticsResult(overall: 0.5, isUtility: true)
-        let memorable = AestheticsResult(overall: 0.8, isUtility: false)
+        let nonUtility = AestheticsResult(overall: 0.8, isUtility: false)
         try assertTrue(ResultFormatter.formatAesthetics(utility).contains("utility"))
-        try assertTrue(ResultFormatter.formatAesthetics(memorable).contains("memorable"))
+        try assertTrue(ResultFormatter.formatAesthetics(nonUtility).contains("non-utility"))
     }
 
     test("AestheticsResult round-trips Codable") {

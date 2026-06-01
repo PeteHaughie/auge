@@ -35,7 +35,7 @@ enum PDFProcessor {
             throw AugeError.invalidImage
         }
         if document.isEncrypted && !document.unlock(withPassword: "") {
-            throw AugeError.unknown("encrypted PDF requires a password")
+            throw AugeError.unknown("encrypted PDFs are not supported (no password input)")
         }
         guard document.pageCount > 0 else {
             throw AugeError.invalidImage
@@ -70,8 +70,18 @@ enum PDFProcessor {
         // and coordinate flipping correctly across all PDF variants.
         let bounds = page.bounds(for: .mediaBox)
         let scale = CGFloat(dpi) / 72.0
-        let pixelWidth = max(1, bounds.width * scale)
-        let pixelHeight = max(1, bounds.height * scale)
+        var pixelWidth = max(1, bounds.width * scale)
+        var pixelHeight = max(1, bounds.height * scale)
+        // Cap the rasterized long edge so a huge page (large format / high DPI) can't
+        // allocate an unbounded bitmap. OCR downstream caps at the same edge anyway,
+        // so this never costs quality.
+        let maxEdge = CGFloat(ImageSizePolicy.maxLongEdge)
+        let longEdge = max(pixelWidth, pixelHeight)
+        if longEdge > maxEdge {
+            let shrink = maxEdge / longEdge
+            pixelWidth = max(1, pixelWidth * shrink)
+            pixelHeight = max(1, pixelHeight * shrink)
+        }
         let size = NSSize(width: pixelWidth, height: pixelHeight)
 
         let nsImage = page.thumbnail(of: size, for: .mediaBox)

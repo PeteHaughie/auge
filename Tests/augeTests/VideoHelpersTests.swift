@@ -40,6 +40,14 @@ func runVideoHelpersTests() {
         try assertNil(IntervalParser.parse("-1s"))
     }
 
+    test("IntervalParser.parse: rejects non-finite values") {
+        try assertNil(IntervalParser.parse("inf"))
+        try assertNil(IntervalParser.parse("infinity"))
+        try assertNil(IntervalParser.parse("nan"))
+        try assertNil(IntervalParser.parse("infs"))
+        try assertNil(IntervalParser.parse("infms"))
+    }
+
     // MARK: --bbox parsing
 
     test("BBoxString.parse: standard four-comma form") {

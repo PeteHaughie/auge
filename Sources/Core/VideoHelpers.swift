@@ -15,7 +15,7 @@ public enum IntervalParser {
         let s = input.trimmingCharacters(in: .whitespaces).lowercased()
         guard !s.isEmpty else { return nil }
 
-        if let raw = Double(s), raw > 0 {
+        if let raw = Double(s), raw > 0, raw.isFinite {
             return raw
         }
 
@@ -26,7 +26,7 @@ public enum IntervalParser {
             return (s, "")
         }()
 
-        guard !number.isEmpty, let value = Double(number), value > 0 else { return nil }
+        guard !number.isEmpty, let value = Double(number), value > 0, value.isFinite else { return nil }
         switch unit {
         case "ms": return value / 1000.0
         case "s":  return value

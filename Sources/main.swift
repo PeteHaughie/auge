@@ -402,6 +402,46 @@ if analysisMode == .compare {
 var hasError = false
 
 for filePath in filePaths {
+    // Video inputs are sampled frame-by-frame via AVFoundation. Route them before
+    // the image validator (which only accepts still-image/PDF extensions).
+    let inputExt = ImageSource.extensionFrom(path: filePath)
+    if let inputExt, ImageSource.isVideoExtension(inputExt) {
+        switch ImageSource.validatePath(filePath, allowVideo: true) {
+        case .failure(let error):
+            printError("\(error.cliLabel) \(error.userMessage)")
+            hasError = true
+        case .success(let url):
+            do {
+                func sample(ocr: Bool, classify: Bool) throws -> VideoResult {
+                    try Analyzer.sampleVideo(
+                        at: url, everySeconds: sampleEverySeconds,
+                        runOCR: ocr, runClassify: classify, languages: languageHints
+                    )
+                }
+                switch analysisMode {
+                case .video:
+                    let r = try sample(ocr: true, classify: true)
+                    outputResult(mode: "video", file: filePath, payload: .video(VideoPayload(video: r)))
+                case .ocr:
+                    let r = try sample(ocr: true, classify: false)
+                    outputResult(mode: "video", file: filePath, payload: .video(VideoPayload(video: r)))
+                case .classify:
+                    let r = try sample(ocr: false, classify: true)
+                    outputResult(mode: "video", file: filePath, payload: .video(VideoPayload(video: r)))
+                case .trajectories:
+                    throw AugeError.unknown("--trajectories on video is not yet implemented; pass a single image frame")
+                default:
+                    throw AugeError.unsupportedFormat("\(inputExt): video input is only supported with --video, --ocr, or --classify")
+                }
+            } catch {
+                let classified = AugeError.classify(error)
+                printError("\(classified.cliLabel) \(classified.userMessage)")
+                hasError = true
+            }
+        }
+        continue
+    }
+
     switch ImageSource.validatePath(filePath) {
     case .failure(let error):
         printError("\(error.cliLabel) \(error.userMessage)")
@@ -604,40 +644,21 @@ for filePath in filePaths {
                 break
 
             case .trajectories:
-                if Analyzer.isVideo(at: url) {
-                    let sampled = try Analyzer.sampleVideo(
-                        at: url,
-                        everySeconds: sampleEverySeconds,
-                        runOCR: false, runClassify: false,
-                        languages: []
-                    )
-                    // Trajectories over video: we sample frames + emit a single-frame
-                    // trajectory result per frame, packed into one bundled payload.
-                    // For now emit the video duration + an empty trajectory list as
-                    // a fallback (full per-frame trajectory aggregation is best
-                    // handled by VNDetectTrajectoriesRequest in a tight async loop).
-                    _ = sampled
-                    let r = TrajectoryResult(trajectories: [])
-                    outputResult(mode: "trajectories", file: filePath,
-                                 payload: .trajectories(TrajectoriesPayload(trajectories: r)))
-                } else {
-                    let r = try Analyzer.detectTrajectories(at: url)
-                    outputResult(mode: "trajectories", file: filePath,
-                                 payload: .trajectories(TrajectoriesPayload(trajectories: r)))
-                }
+                // Single still image: Vision returns at most a projected trajectory.
+                // Video files are routed to frame sampling before this switch.
+                let r = try Analyzer.detectTrajectories(at: url)
+                outputResult(mode: "trajectories", file: filePath,
+                             payload: .trajectories(TrajectoriesPayload(trajectories: r)))
 
             case .video:
-                let result = try Analyzer.sampleVideo(
-                    at: url,
-                    everySeconds: sampleEverySeconds,
-                    runOCR: true, runClassify: true,
-                    languages: languageHints
-                )
-                outputResult(mode: "video", file: filePath,
-                             payload: .video(VideoPayload(video: result)))
+                // Videos are handled by the frame-sampling branch above; reaching here
+                // means --video was given a still image.
+                throw AugeError.unsupportedFormat("\(url.pathExtension): --video requires a video file (mp4, mov, m4v, avi, mkv)")
 
             case .all:
-                // --all means ALL: every capability auge supports runs here.
+                // --all runs every SINGLE-IMAGE capability. Multi-input/video/custom-model
+                // caps (compare, model, motion, align, track, trajectories, video) are
+                // excluded because --all operates on one still image.
                 // Each is wrapped in its own do/catch so a single failure does
                 // not block the others. Failures surface as `null` in JSON
                 // and a stderr warning (unless --quiet).

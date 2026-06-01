@@ -235,8 +235,10 @@ struct VideoPayload: Encodable {
     let video: VideoResult
 }
 
-/// Combined payload for `--all` mode: every analysis bundled in one response.
-/// Every capability is attempted; failures show up as `null` for that key.
+/// Combined payload for `--all` mode: every SINGLE-IMAGE analysis bundled in one response.
+/// Multi-input/video/custom-model caps (compare, model, motion, align, track, trajectories,
+/// video) are excluded because `--all` operates on one still image. Each capability is
+/// attempted independently; failures show up as `null` for that key.
 struct AllPayload: Encodable {
     let ocr: OCRPayload?
     let classify: ClassificationPayload?

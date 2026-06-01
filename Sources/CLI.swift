@@ -7,7 +7,9 @@ import Foundation
 import AugeCore
 
 // MARK: - JSON schema version
-let augeSchemaVersion = "1"
+// Bumped to "2" when JSON keys became uniformly snake_case (e.g. feature_print,
+// line_details, angle_radians) instead of a camelCase/snake_case mix.
+let augeSchemaVersion = "2"
 
 // MARK: - Output Result
 
@@ -74,13 +76,72 @@ private func plainTextFor(payload: ResultPayload) -> String {
     case .track(let p):              return ResultFormatter.formatTrack(p.track)
     case .trajectories(let p):       return ResultFormatter.formatTrajectories(p.trajectories)
     case .video(let p):              return ResultFormatter.formatVideo(p.video)
-    case .all(let p):                return ResultFormatter.formatAll(
-        ocrLines: p.ocr?.lines,
-        classifications: p.classify?.classifications,
-        barcodes: p.barcodes?.barcodes,
-        faces: p.faces?.faces
-    )
+    case .all(let p):                return plainAll(p)
     }
+}
+
+/// Render every capability that produced a (non-nil) payload in `--all` plain output,
+/// reusing the per-capability formatters so plain/md match the JSON envelope.
+private func plainAll(_ p: AllPayload) -> String {
+    var s: [String] = []
+    func add(_ title: String, _ body: String) {
+        s.append("=== \(title) ===\n" + body)
+    }
+    if let x = p.ocr, !x.lines.isEmpty   { add("OCR", ResultFormatter.formatOCR(x.lines)) }
+    if let x = p.classify                { add("CLASSIFY", ResultFormatter.formatClassification(x.classifications)) }
+    if let x = p.barcodes                { add("BARCODES", ResultFormatter.formatBarcodes(x.barcodes)) }
+    if let x = p.faces                   { add("FACES", ResultFormatter.formatFaces(x.faces)) }
+    if let x = p.faceLandmarks           { add("FACE-LANDMARKS", ResultFormatter.formatFaceLandmarks(x.faces)) }
+    if let x = p.faceQuality             { add("FACE-QUALITY", ResultFormatter.formatFaceQuality(x.faces)) }
+    if let x = p.humans                  { add("HUMANS", ResultFormatter.formatHumans(x.humans)) }
+    if let x = p.textRectangles          { add("TEXT-RECTANGLES", ResultFormatter.formatTextRectangles(x.rectangles)) }
+    if let x = p.rectangles              { add("RECTANGLES", ResultFormatter.formatRectangles(x.rectangles)) }
+    if let x = p.horizon                 { add("HORIZON", ResultFormatter.formatHorizon(x.horizon)) }
+    if let x = p.animals                 { add("ANIMALS", ResultFormatter.formatAnimals(x.animals)) }
+    if let x = p.animalPose              { add("ANIMAL-POSE", ResultFormatter.formatAnimalPose(x.animals)) }
+    if let x = p.bodyPose                { add("BODY-POSE", ResultFormatter.formatBodyPose(x.bodies)) }
+    if let x = p.handPose                { add("HAND-POSE", ResultFormatter.formatHandPose(x.hands)) }
+    if let x = p.saliencyAttention       { add("SALIENCY-ATTENTION", ResultFormatter.formatSaliency(x.regions)) }
+    if let x = p.saliencyObjectness      { add("SALIENCY-OBJECTNESS", ResultFormatter.formatSaliency(x.regions)) }
+    if let x = p.contours                { add("CONTOURS", ResultFormatter.formatContours(x.contours)) }
+    if let x = p.featurePrint            { add("FEATURE-PRINT", ResultFormatter.formatFeaturePrint(x.featurePrint)) }
+    if let x = p.aesthetics              { add("AESTHETICS", ResultFormatter.formatAesthetics(x.aesthetics)) }
+    if let x = p.smudge                  { add("SMUDGE", ResultFormatter.formatSmudge(x.smudge)) }
+    if let x = p.document                { add("DOCUMENT", ResultFormatter.formatDocument(x.document)) }
+    if let x = p.subject                 { add("SUBJECT", ResultFormatter.formatSubject(x.subject)) }
+    if let x = p.personsMask             { add("PERSONS-MASK", ResultFormatter.formatPersonsMask(x.personsMask)) }
+    return s.isEmpty ? "(no results across any mode)" : s.joined(separator: "\n\n")
+}
+
+private func markdownAll(_ p: AllPayload) -> String {
+    var s: [String] = []
+    func add(_ title: String, _ body: String) {
+        s.append("## \(title)\n\n" + body)
+    }
+    if let x = p.ocr, !x.lines.isEmpty   { add("OCR", ResultFormatter.markdownOCR(x.lines)) }
+    if let x = p.classify                { add("Classification", ResultFormatter.markdownClassification(x.classifications)) }
+    if let x = p.barcodes                { add("Barcodes", ResultFormatter.markdownBarcodes(x.barcodes)) }
+    if let x = p.faces                   { add("Faces", ResultFormatter.markdownFaces(x.faces)) }
+    if let x = p.faceLandmarks           { add("Face Landmarks", ResultFormatter.markdownFaceLandmarks(x.faces)) }
+    if let x = p.faceQuality             { add("Face Quality", ResultFormatter.markdownFaceQuality(x.faces)) }
+    if let x = p.humans                  { add("Humans", ResultFormatter.markdownHumans(x.humans)) }
+    if let x = p.textRectangles          { add("Text Rectangles", ResultFormatter.markdownTextRectangles(x.rectangles)) }
+    if let x = p.rectangles              { add("Rectangles", ResultFormatter.markdownRectangles(x.rectangles)) }
+    if let x = p.horizon                 { add("Horizon", ResultFormatter.markdownHorizon(x.horizon)) }
+    if let x = p.animals                 { add("Animals", ResultFormatter.markdownAnimals(x.animals)) }
+    if let x = p.animalPose              { add("Animal Pose", ResultFormatter.markdownAnimalPose(x.animals)) }
+    if let x = p.bodyPose                { add("Body Pose", ResultFormatter.markdownBodyPose(x.bodies)) }
+    if let x = p.handPose                { add("Hand Pose", ResultFormatter.markdownHandPose(x.hands)) }
+    if let x = p.saliencyAttention       { add("Saliency (Attention)", ResultFormatter.markdownSaliency(x.regions)) }
+    if let x = p.saliencyObjectness      { add("Saliency (Objectness)", ResultFormatter.markdownSaliency(x.regions)) }
+    if let x = p.contours                { add("Contours", ResultFormatter.markdownContours(x.contours)) }
+    if let x = p.featurePrint            { add("Feature Print", ResultFormatter.markdownFeaturePrint(x.featurePrint)) }
+    if let x = p.aesthetics              { add("Aesthetics", ResultFormatter.markdownAesthetics(x.aesthetics)) }
+    if let x = p.smudge                  { add("Smudge", ResultFormatter.markdownSmudge(x.smudge)) }
+    if let x = p.document                { add("Document", ResultFormatter.markdownDocument(x.document)) }
+    if let x = p.subject                 { add("Subject", ResultFormatter.markdownSubject(x.subject)) }
+    if let x = p.personsMask             { add("Persons Mask", ResultFormatter.markdownPersonsMask(x.personsMask)) }
+    return s.isEmpty ? "_(no results across any mode)_" : s.joined(separator: "\n\n")
 }
 
 private func markdownFor(payload: ResultPayload) -> String {
@@ -115,12 +176,7 @@ private func markdownFor(payload: ResultPayload) -> String {
     case .track(let p):              return ResultFormatter.markdownTrack(p.track)
     case .trajectories(let p):       return ResultFormatter.markdownTrajectories(p.trajectories)
     case .video(let p):              return ResultFormatter.markdownVideo(p.video)
-    case .all(let p):                return ResultFormatter.markdownAll(
-        ocrLines: p.ocr?.lines,
-        classifications: p.classify?.classifications,
-        barcodes: p.barcodes?.barcodes,
-        faces: p.faces?.faces
-    )
+    case .all(let p):                return markdownAll(p)
     }
 }
 
@@ -198,7 +254,9 @@ func printUsage() {
       \(appName) --align <a> <b>              Image registration transform (translation/homography)
       \(appName) --track --bbox <x,y,w,h> <frames…>  Track an object across frames
       \(appName) --trajectories <image>       In-flight object trajectory (single frame)
-      \(appName) <video.mp4> --ocr --every 1s Sample a video, run OCR per frame (NDJSON-friendly)
+      \(appName) --video <video.mp4> --every 1s  Sample a video, OCR + classify each frame
+      \(appName) --ocr <video.mp4> --every 1s    Sample a video, run OCR per frame
+      \(appName) --classify <video.mp4> --every 1s  Sample a video, classify each frame
 
     \(styled("OPTIONS:", .yellow, .bold))
       -o, --output <format>     Output format: plain, json, md, ndjson [default: plain]
@@ -247,7 +305,7 @@ func printUsage() {
       \(appName) --face-landmarks portrait.jpg --json
       \(appName) --rectangles whiteboard.jpg
       \(appName) --horizon landscape.jpg
-      \(appName) --feature-print a.jpg --json | jq .results.featurePrint.dimension
+      \(appName) --feature-print a.jpg --json | jq .results.feature_print.dimension
       \(appName) --compare a.jpg b.jpg
       \(appName) --ocr screenshot.png | apfel "summarize this"
       ls *.png | \(appName) --classify --ndjson

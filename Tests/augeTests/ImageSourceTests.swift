@@ -91,4 +91,36 @@ func runImageSourceTests() {
             throw TestFailure("expected success")
         }
     }
+
+    // --- Video extensions ---
+
+    test("video extensions are recognized") {
+        for ext in ["mp4", "mov", "m4v", "avi", "mkv", "MP4", "MoV"] {
+            try assertTrue(ImageSource.isVideoExtension(ext))
+        }
+        try assertFalse(ImageSource.isVideoExtension("png"))
+        try assertFalse(ImageSource.isVideoExtension("webm")) // AVFoundation can't decode it on stock macOS
+    }
+
+    test("validatePath rejects video extension unless allowVideo") {
+        let path = "/tmp/auge_test_clip.mp4"
+        FileManager.default.createFile(atPath: path, contents: Data("x".utf8))
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        if case .failure = ImageSource.validatePath(path) { } else {
+            throw TestFailure("expected failure without allowVideo")
+        }
+        if case .success = ImageSource.validatePath(path, allowVideo: true) { } else {
+            throw TestFailure("expected success with allowVideo")
+        }
+    }
+
+    test("validatePath rejects a directory") {
+        // A directory with a supported-looking name must not validate as a file.
+        let dir = "/tmp/auge_test_dir.png"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        if case .failure = ImageSource.validatePath(dir) { } else {
+            throw TestFailure("expected failure for a directory")
+        }
+    }
 }

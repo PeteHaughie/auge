@@ -45,6 +45,12 @@ func runMaskAnalysisTests() {
         try assertEqual(cov, 0.5)
     }
 
+    test("coverage: mismatched buffer length is rejected") {
+        // pixels.count != width*height → guard returns 0 (matches boundingBox/connectedComponents)
+        try assertEqual(MaskAnalysis.coverage(width: 4, height: 4, pixels: [1, 1, 1]), 0)
+        try assertEqual(MaskAnalysis.coverage(width: 0, height: 0, pixels: []), 0)
+    }
+
     // MARK: bounding box
 
     test("boundingBox: empty mask returns nil") {

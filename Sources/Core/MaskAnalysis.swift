@@ -34,8 +34,8 @@ public struct MaskComponent: Sendable {
 
 public enum MaskAnalysis {
     public static func coverage(width: Int, height: Int, pixels: [UInt8], threshold: UInt8 = 1) -> Double {
+        guard width > 0, height > 0, pixels.count == width * height else { return 0 }
         let total = width * height
-        if total <= 0 { return 0 }
         var fg = 0
         for p in pixels where p >= threshold { fg += 1 }
         return Double(fg) / Double(total)

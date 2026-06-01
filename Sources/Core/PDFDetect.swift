@@ -12,10 +12,13 @@ public enum PDFDetect {
     }
 
     /// Returns true if the file at the given path is a PDF (by magic bytes, not extension).
+    /// Scans the first 1 KB so PDFs with a few leading bytes before `%PDF-` are still
+    /// recognized (the spec tolerates this), keeping the cheap offset-0 check as a fast path.
     public static func isPDF(at url: URL) -> Bool {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
         defer { try? handle.close() }
-        guard let data = try? handle.read(upToCount: magic.count) else { return false }
-        return isPDF(data)
+        guard let data = try? handle.read(upToCount: 1024) else { return false }
+        if isPDF(data) { return true }
+        return data.range(of: Data(magic)) != nil
     }
 }

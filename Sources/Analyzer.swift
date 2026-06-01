@@ -206,10 +206,10 @@ enum Analyzer {
         try handler.perform([request])
 
         guard let observations = request.results else { return [] }
+        // Return the full sorted list — the CLI layer is the single place that
+        // applies --min-confidence and --top, so neither is silently clamped here.
         return observations
-            .filter { $0.confidence > 0.01 }
             .sorted { $0.confidence > $1.confidence }
-            .prefix(10)
             .map { ClassificationResult(label: $0.identifier, confidence: Double($0.confidence)) }
     }
 
@@ -261,10 +261,16 @@ enum Analyzer {
             var regions: [String: [PointResult]] = [:]
 
             if let lm = obs.landmarks {
+                // Vision returns landmark points normalized to the FACE bounding box, not
+                // the image. Map them into image-normalized coords (bottom-left origin) so
+                // they share one coordinate space with every other bbox/point auge emits.
                 func add(_ name: String, _ region: VNFaceLandmarkRegion2D?) {
                     guard let r = region else { return }
                     regions[name] = r.normalizedPoints.map {
-                        PointResult(x: Double($0.x), y: Double($0.y))
+                        PointResult(
+                            x: Double(box.origin.x) + Double($0.x) * Double(box.size.width),
+                            y: Double(box.origin.y) + Double($0.y) * Double(box.size.height)
+                        )
                     }
                 }
                 add("faceContour", lm.faceContour)
@@ -579,11 +585,14 @@ enum Analyzer {
         bytes.withUnsafeBytes { raw in
             switch obs.elementType {
             case .float:
+                // Clamp to the actual buffer length so a short/padded buffer can never over-read.
+                let safe = min(count, raw.count / MemoryLayout<Float>.stride)
                 let buf = raw.bindMemory(to: Float.self)
-                for i in 0..<count { vector.append(Double(buf[i])) }
+                for i in 0..<safe { vector.append(Double(buf[i])) }
             case .double:
+                let safe = min(count, raw.count / MemoryLayout<Double>.stride)
                 let buf = raw.bindMemory(to: Double.self)
-                for i in 0..<count { vector.append(buf[i]) }
+                for i in 0..<safe { vector.append(buf[i]) }
             case .unknown:
                 break
             @unknown default:
@@ -726,6 +735,13 @@ enum Analyzer {
             compiledURL = modelURL
         }
 
+        // Only a compiled-from-source model lives in a temp dir we own; clean it up on
+        // every exit path. Never delete a user-supplied .mlmodelc.
+        let didCompile = (modelKind == .source)
+        defer {
+            if didCompile { try? FileManager.default.removeItem(at: compiledURL) }
+        }
+
         let mlModel: MLModel
         do {
             mlModel = try MLModel(contentsOf: compiledURL)
@@ -814,20 +830,28 @@ enum Analyzer {
                 var sample = [Double](repeating: 0, count: limit)
                 let elementType: String
                 switch array.dataType {
-                case .double:
+                case .double, .float64:
                     let ptr = array.dataPointer.bindMemory(to: Double.self, capacity: count)
                     for i in 0..<limit { sample[i] = ptr[i] }
                     elementType = "double"
-                case .float32:
+                case .float32, .float:
                     let ptr = array.dataPointer.bindMemory(to: Float.self, capacity: count)
                     for i in 0..<limit { sample[i] = Double(ptr[i]) }
                     elementType = "float32"
                 case .float16:
+                    // Float16 is available on the macOS 26 baseline — decode real values
+                    // instead of emitting zeros (which silently misrepresented the data).
+                    let ptr = array.dataPointer.bindMemory(to: Float16.self, capacity: count)
+                    for i in 0..<limit { sample[i] = Double(ptr[i]) }
                     elementType = "float16"
                 case .int32:
                     let ptr = array.dataPointer.bindMemory(to: Int32.self, capacity: count)
                     for i in 0..<limit { sample[i] = Double(ptr[i]) }
                     elementType = "int32"
+                case .int8:
+                    let ptr = array.dataPointer.bindMemory(to: Int8.self, capacity: count)
+                    for i in 0..<limit { sample[i] = Double(ptr[i]) }
+                    elementType = "int8"
                 @unknown default:
                     elementType = "unknown"
                 }
@@ -913,7 +937,10 @@ enum Analyzer {
         let h = CVPixelBufferGetHeight(buffer)
         let rowBytes = CVPixelBufferGetBytesPerRow(buffer)
         guard w > 0, h > 0, let base = CVPixelBufferGetBaseAddress(buffer) else { return [] }
-        let stride = max(1, (w * h) / 4096)
+        // Round the stride up so ceil(N/stride) ≤ 4096 holds exactly and the samples
+        // stay uniformly spaced across the whole frame (the old floor-division stride
+        // could overshoot the cap and bias sampling).
+        let stride = max(1, Int((Double(w * h) / 4096.0).rounded(.up)))
         var out: [(Double, Double)] = []
         out.reserveCapacity(4096)
         var counter = 0
@@ -1086,6 +1113,11 @@ enum Analyzer {
         languages: [String]
     ) throws -> VideoResult {
         let asset = AVURLAsset(url: url)
+        // NOTE: AVAsset.duration / copyCGImage are deprecated in favor of the async
+        // load(.duration) / image(at:) APIs. We deliberately keep the synchronous calls:
+        // the CLI's runAsync bridge blocks the calling thread, and the async AVFoundation
+        // APIs deadlock when awaited under that block. Migrating cleanly needs an async
+        // top-level main (tracked as a follow-up); the sync calls work on macOS 26.
         let duration = CMTimeGetSeconds(asset.duration)
         guard duration.isFinite, duration > 0 else {
             return VideoResult(durationSeconds: 0, frames: [])

@@ -17,7 +17,7 @@ public enum ResultFormatter {
         guard !results.isEmpty else { return "" }
         let sorted = results.sorted { $0.confidence > $1.confidence }
         return sorted.map { result in
-            let pct = Int(result.confidence * 100)
+            let pct = Int((result.confidence * 100).rounded())
             return "\(result.label): \(pct)%"
         }.joined(separator: "\n")
     }
@@ -26,7 +26,7 @@ public enum ResultFormatter {
         guard !results.isEmpty else { return "" }
         let sorted = results.sorted { $0.confidence > $1.confidence }
         return sorted.map { r in
-            let pct = Int(r.confidence * 100)
+            let pct = Int((r.confidence * 100).rounded())
             return "- **\(r.label)** — \(pct)%"
         }.joined(separator: "\n")
     }
@@ -342,12 +342,12 @@ public enum ResultFormatter {
     // MARK: Aesthetics
 
     public static func formatAesthetics(_ a: AestheticsResult) -> String {
-        let utility = a.isUtility ? "utility" : "memorable"
+        let utility = a.isUtility ? "utility" : "non-utility"
         return String(format: "aesthetics: %.3f (%@)", a.overall, utility as NSString)
     }
 
     public static func markdownAesthetics(_ a: AestheticsResult) -> String {
-        let utility = a.isUtility ? "utility" : "memorable"
+        let utility = a.isUtility ? "utility" : "non-utility"
         return String(format: "**aesthetics**: `%.3f` (%@)", a.overall, utility as NSString)
     }
 

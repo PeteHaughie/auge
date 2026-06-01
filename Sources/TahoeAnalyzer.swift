@@ -60,7 +60,17 @@ enum TahoeAnalyzer {
             tableResult(table)
         }
 
-        let fullText = paragraphs.map { $0.text }.joined(separator: "\n\n")
+        // fullText carries everything a plain-text consumer should see: paragraphs,
+        // then list items (one per line), then tables (tab-joined rows). Without this,
+        // list/table content silently vanished from --document plain output.
+        let paragraphText = paragraphs.map { $0.text }.joined(separator: "\n\n")
+        let listText = lists.flatMap { $0.items }.joined(separator: "\n")
+        let tableText = tables
+            .flatMap { $0.cells.map { $0.joined(separator: "\t") } }
+            .joined(separator: "\n")
+        let fullText = [paragraphText, listText, tableText]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
 
         return DocumentResult(
             text: fullText,

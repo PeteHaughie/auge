@@ -308,6 +308,12 @@ public struct SubjectResult: Codable, Sendable {
         self.coverage = coverage
         self.instances = instances
     }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let coverage = try c.decode(Double.self, forKey: .coverage)
+        let instances = try c.decode([SubjectInstance].self, forKey: .instances)
+        self.init(coverage: coverage, instances: instances)
+    }
 }
 
 public struct PersonsMaskResult: Codable, Sendable {
@@ -318,6 +324,12 @@ public struct PersonsMaskResult: Codable, Sendable {
         self.count = instances.count
         self.coverage = coverage
         self.instances = instances
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let coverage = try c.decode(Double.self, forKey: .coverage)
+        let instances = try c.decode([SubjectInstance].self, forKey: .instances)
+        self.init(coverage: coverage, instances: instances)
     }
 }
 
