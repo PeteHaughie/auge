@@ -19,7 +19,7 @@ let package = Package(
                 "AugeCore",
             ],
             path: "Sources",
-            exclude: ["Core", "CLIApp", "MCPApp"]
+            exclude: ["Core", "CLIApp", "MCPApp", "main.swift"]
         ),
         // Main executable — thin entrypoint over AugeApp
         .executableTarget(
