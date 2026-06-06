@@ -1,6 +1,6 @@
 {
-  "name": "auge-mcp",
+  "name": "auge",
   "skills": [
-    "./skills/auge-mcp"
+    "./skills/auge"
   ]
 }
