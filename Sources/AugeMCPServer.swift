@@ -564,6 +564,14 @@ package enum AugeMCPServer {
         case .aesthetics: return "Score image aesthetics."
         case .smudge: return "Detect lens smudge confidence."
         case .document: return "Extract structured document content including paragraphs, lists, and tables."
+        case .subject: return "Extract subject segmentation mask."
+        case .personsMask: return "Extract person segmentation mask."
+        case .model: return "Generate a 3D model from image."
+        case .motion: return "Detect motion in image sequences."
+        case .align: return "Align images."
+        case .track: return "Track objects across frames."
+        case .trajectories: return "Extract motion trajectories."
+        case .video: return "Analyze video content."
         case .all: return "Run every auge analysis on each input and return a combined result."
         }
     }
@@ -614,7 +622,7 @@ package enum AugeMCPServer {
             properties["upperBodyOnly"] = ["type": "boolean", "description": "When detecting humans, limit detection to upper bodies."]
             properties["maxHands"] = ["type": "integer", "minimum": 1, "maximum": 4, "description": "Maximum number of hands to detect."]
 
-        default:
+        case .barcode, .faces, .faceLandmarks, .faceQuality, .textRectangles, .rectangles, .horizon, .animals, .animalPose, .bodyPose, .saliencyAttention, .saliencyObjectness, .contours, .featurePrint, .aesthetics, .smudge, .document, .subject, .personsMask, .model, .motion, .align, .track, .trajectories, .video, .compare:
             break
         }
 
